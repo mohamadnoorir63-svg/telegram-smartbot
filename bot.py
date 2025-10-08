@@ -1,75 +1,159 @@
-import os
-import telebot
-import logging
+# -*- coding: utf-8 -*-
+# Persian Lux Smart Panel – ChatGPT Integrated Edition
+# Designed for Mohammad 👑
+
+import os, json, random, time, logging
+from datetime import datetime
+import pytz, jdatetime, telebot
+from telebot import types
 from openai import OpenAI
 
-# فعال‌سازی لاگ‌ها برای دیدن خطاها در Heroku
-logging.basicConfig(level=logging.INFO)
+# ================= ⚙️ تنظیمات پایه =================
+TOKEN = os.environ.get("BOT_TOKEN")
+SUDO_ID = int(os.environ.get("SUDO_ID", "0"))
+OPENAI_KEY = os.environ.get("OPENAI_API_KEY")
 
-# گرفتن متغیرها از محیط
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-SUDO_ID = os.environ.get("SUDO_ID")
+bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
+client = OpenAI(api_key=OPENAI_KEY)
 
-bot = telebot.TeleBot(BOT_TOKEN)
-client = OpenAI(api_key=OPENAI_API_KEY)
+DATA_FILE = "data.json"
+LOG_FILE  = "error.log"
 
-# پاسخ‌های آماده ساده
-simple_responses = {
-    "سلام": ["سلام! 🌹", "درود بر تو 👋", "سلام رفیق! 😄"],
-    "خوبی": ["مرسی، تو خوبی؟ 😁", "عالی‌ام، امیدوارم تو هم همینطور باشی 🌸"],
-    "خداحافظ": ["خداحافظ 👋", "فعلاً 🌹", "بدرود دوست من! 🌼"]
-}
+logging.basicConfig(filename=LOG_FILE, level=logging.ERROR,
+                    format="%(asctime)s - %(levelname)s - %(message)s")
 
-# تابع برای پرسش از ChatGPT
-def ask_gpt(message_text):
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "تو یک دستیار فارسی هوشمند هستی."},
-            {"role": "user", "content": message_text}
-        ],
-        temperature=0.7,
-        max_tokens=200
-    )
-    return response.choices[0].message.content.strip()
+# ================= 💾 فایل داده =================
+def base_data():
+    return {"users": [], "jokes": [], "falls": []}
 
-
-# هندلر پیام‌ها
-@bot.message_handler(func=lambda m: True)
-def handle_message(m):
-    text = m.text.strip()
-
-    # مرحله ۱: اگر پیام در پاسخ‌های ساده بود
-    for key, replies in simple_responses.items():
-        if key in text:
-            bot.reply_to(m, random.choice(replies))
-            return
-
-    # مرحله ۲: سعی کن از ChatGPT جواب بگیری
+def load_data():
+    if not os.path.exists(DATA_FILE):
+        save_data(base_data())
     try:
-        reply = ask_gpt(text)
-        bot.reply_to(m, reply)
-    except Exception as e:
-        logging.exception(f"OpenAI error: {e}")
-        bot.reply_to(m, "یه مشکلی پیش اومد 😅 لطفاً دوباره امتحان کن.")
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        data = base_data()
+    for k in base_data():
+        if k not in data:
+            data[k] = base_data()[k]
+    save_data(data)
+    return data
 
+def save_data(d):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False, indent=2)
 
-# دستور تست اتصال ChatGPT
-@bot.message_handler(commands=['ai_test'])
-def ai_test(m):
+def shamsi_date(): return jdatetime.datetime.now().strftime("%A %d %B %Y")
+def shamsi_time(): return jdatetime.datetime.now().strftime("%H:%M:%S")
+def cmd_text(m): return (getattr(m, "text", None) or "").strip()
+def is_sudo(uid): return str(uid) == str(SUDO_ID)
+
+# ================= 🧠 اتصال به ChatGPT =================
+def ask_chatgpt(question):
     try:
-        r = client.chat.completions.create(
+        res = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role":"user","content":"فقط بنویس OK"}],
-            temperature=0.2,
-            max_tokens=5
+            messages=[
+                {"role": "system", "content": "تو یک ربات فارسی‌زبان مودب و باهوش هستی."},
+                {"role": "user", "content": question}
+            ],
+            max_tokens=200
         )
-        txt = r.choices[0].message.content.strip()
-        bot.reply_to(m, f"✅ نتیجه تست: {txt}")
+        return res.choices[0].message.content.strip()
     except Exception as e:
-        logging.exception(f"/ai_test error: {e}")
-        bot.reply_to(m, "❌ تست ناموفق شد، لاگ‌ها رو در هروکو چک کن.")
+        logging.error(f"ChatGPT error: {e}")
+        return "❗ خطایی در ارتباط با ChatGPT رخ داد."
 
-import random
-bot.polling(none_stop=True)
+# ================= 🧾 دستور /start با دکمه شیشه‌ای =================
+@bot.message_handler(commands=["start"])
+def start_cmd(m):
+    data = load_data()
+    uid = str(m.from_user.id)
+    if uid not in data["users"]:
+        data["users"].append(uid)
+        save_data(data)
+
+    markup = types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton("➕ افزودن ربات به گروه", url=f"https://t.me/{bot.get_me().username}?startgroup=true"),
+        types.InlineKeyboardButton("🧑‍💻 پشتیبانی", url="https://t.me/NOORI_NOOR")
+    )
+
+    msg = (
+        "👋 سلام به ربات مدیریتی و هوشمند Persian Lux خوش اومدی!\n\n"
+        "🤖 من می‌تونم گروهت رو مدیریت کنم، فال و جوک بگم، و حتی با هوش مصنوعی ChatGPT حرف بزنم!\n"
+        "✨ برای شروع می‌تونی منو به گروهت اضافه کنی یا با من حرف بزنی.\n\n"
+        "📅 تاریخ امروز: " + shamsi_date() + "\n"
+        "⏰ ساعت: " + shamsi_time()
+    )
+    bot.reply_to(m, msg, reply_markup=markup)
+
+# ================= 🧩 دستورات ویژه =================
+@bot.message_handler(func=lambda m: True)
+def handle_all(m):
+    text = cmd_text(m)
+    uid = str(m.from_user.id)
+    data = load_data()
+
+    # ثبت کاربر جدید
+    if uid not in data["users"]:
+        data["users"].append(uid)
+        save_data(data)
+
+    # پاسخ‌های پیش‌فرض ساده
+    if text in ["سلام", "سلام ربات", "هی"]:
+        return bot.reply_to(m, f"✨ سلام {m.from_user.first_name}! چطور می‌تونم کمکت کنم؟")
+
+    # جوک
+    if text == "جوک":
+        jokes = data.get("jokes", [])
+        if jokes:
+            return bot.reply_to(m, f"😂 {random.choice(jokes)}")
+        return bot.reply_to(m, "😅 هنوز جوکی ثبت نشده!")
+
+    # فال
+    if text == "فال":
+        falls = data.get("falls", [])
+        if falls:
+            return bot.reply_to(m, f"🔮 فال امروز:\n{random.choice(falls)}")
+        return bot.reply_to(m, "😅 هنوز فالی ثبت نشده!")
+
+    # لیست جوک‌ها
+    if text == "لیست جوک":
+        jokes = data.get("jokes", [])
+        if not jokes:
+            return bot.reply_to(m, "❗ هنوز جوکی ثبت نشده.")
+        msg = "\n".join([f"{i+1}. {j}" for i, j in enumerate(jokes)])
+        return bot.reply_to(m, f"📜 <b>لیست جوک‌ها:</b>\n{msg}")
+
+    # لیست فال‌ها
+    if text == "لیست فال":
+        falls = data.get("falls", [])
+        if not falls:
+            return bot.reply_to(m, "❗ هنوز فالی ثبت نشده.")
+        msg = "\n".join([f"{i+1}. {f}" for i, f in enumerate(falls)])
+        return bot.reply_to(m, f"🔮 <b>لیست فال‌ها:</b>\n{msg}")
+
+    # خروج از گروه
+    if text == "لفت بده":
+        if m.chat.type in ["group", "supergroup"]:
+            bot.reply_to(m, "👋 خداحافظ دوستان 🌹")
+            time.sleep(1)
+            bot.leave_chat(m.chat.id)
+        else:
+            bot.reply_to(m, "❗ این دستور فقط در گروه کار می‌کند.")
+        return
+
+    # اگر دستور خاصی نبود → ChatGPT
+    reply = ask_chatgpt(text)
+    bot.reply_to(m, reply)
+
+# ================= 🚀 اجرای نهایی =================
+print("🤖 Persian Lux Smart Panel (ChatGPT Edition) در حال اجراست...")
+while True:
+    try:
+        bot.infinity_polling(timeout=60, long_polling_timeout=30)
+    except Exception as e:
+        logging.error(f"polling crash: {e}")
+        time.sleep(5)
