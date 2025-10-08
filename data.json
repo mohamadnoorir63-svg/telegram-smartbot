@@ -1,7 +1,10 @@
 {
-  "ai_on": true,
+  "ai_on": false,
   "users": {},
-  "banned": {},
-  "muted": {},
-  "groups": []
+  "meta": {
+    "free_msgs": 5
+  },
+  "awaiting_contact": {},
+  "awaiting_broadcast": false,
+  "awaiting_reset": false
 }
