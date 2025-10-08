@@ -1,6 +1,7 @@
 {
+  "ai_on": true,
   "users": {},
-  "banned": [],
+  "banned": {},
   "muted": {},
-  "ai_on": true
+  "groups": []
 }
