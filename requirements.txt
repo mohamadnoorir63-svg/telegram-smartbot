@@ -1,4 +1,2 @@
 pyTelegramBotAPI==4.23.0
-openai
-pytz
-jdatetime
+openai==1.50.2
