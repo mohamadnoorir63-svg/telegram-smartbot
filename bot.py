@@ -1,39 +1,75 @@
 import os
 import telebot
+import logging
 from openai import OpenAI
 
-# گرفتن توکن‌ها از متغیرهای محیطی Heroku
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# فعال‌سازی لاگ‌ها برای دیدن خطاها در Heroku
+logging.basicConfig(level=logging.INFO)
+
+# گرفتن متغیرها از محیط
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+SUDO_ID = os.environ.get("SUDO_ID")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# دستور استارت
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    bot.reply_to(message, "سلام 🌹\nمن ربات هوشمند نوری هستم 🤖\nهرچی بپرسی سعی می‌کنم بهترین جواب رو بدم ✨")
+# پاسخ‌های آماده ساده
+simple_responses = {
+    "سلام": ["سلام! 🌹", "درود بر تو 👋", "سلام رفیق! 😄"],
+    "خوبی": ["مرسی، تو خوبی؟ 😁", "عالی‌ام، امیدوارم تو هم همینطور باشی 🌸"],
+    "خداحافظ": ["خداحافظ 👋", "فعلاً 🌹", "بدرود دوست من! 🌼"]
+}
 
-# پاسخ خودکار با ChatGPT
-@bot.message_handler(func=lambda message: True)
-def chat_with_ai(message):
+# تابع برای پرسش از ChatGPT
+def ask_gpt(message_text):
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "تو یک دستیار فارسی هوشمند هستی."},
+            {"role": "user", "content": message_text}
+        ],
+        temperature=0.7,
+        max_tokens=200
+    )
+    return response.choices[0].message.content.strip()
+
+
+# هندلر پیام‌ها
+@bot.message_handler(func=lambda m: True)
+def handle_message(m):
+    text = m.text.strip()
+
+    # مرحله ۱: اگر پیام در پاسخ‌های ساده بود
+    for key, replies in simple_responses.items():
+        if key in text:
+            bot.reply_to(m, random.choice(replies))
+            return
+
+    # مرحله ۲: سعی کن از ChatGPT جواب بگیری
     try:
-        user_message = message.text
-
-        # درخواست از ChatGPT
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "تو یک ربات تلگرام فارسی باهوش و مودب هستی."},
-                {"role": "user", "content": user_message}
-            ]
-        )
-
-        ai_reply = response.choices[0].message.content
-        bot.reply_to(message, ai_reply)
-
+        reply = ask_gpt(text)
+        bot.reply_to(m, reply)
     except Exception as e:
-        bot.reply_to(message, "یه مشکلی پیش اومد 😅 لطفاً دوباره امتحان کن.")
+        logging.exception(f"OpenAI error: {e}")
+        bot.reply_to(m, "یه مشکلی پیش اومد 😅 لطفاً دوباره امتحان کن.")
 
-# اجرای مداوم ربات
-bot.infinity_polling()
+
+# دستور تست اتصال ChatGPT
+@bot.message_handler(commands=['ai_test'])
+def ai_test(m):
+    try:
+        r = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role":"user","content":"فقط بنویس OK"}],
+            temperature=0.2,
+            max_tokens=5
+        )
+        txt = r.choices[0].message.content.strip()
+        bot.reply_to(m, f"✅ نتیجه تست: {txt}")
+    except Exception as e:
+        logging.exception(f"/ai_test error: {e}")
+        bot.reply_to(m, "❌ تست ناموفق شد، لاگ‌ها رو در هروکو چک کن.")
+
+import random
+bot.polling(none_stop=True)
