@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 # Persian Lux Smart Panel – ChatGPT Integrated Edition
-# Designed for Mohammad 👑
+# Designed and Developed by Mohammad Noori 👑
 
 import os, json, random, time, logging
-from datetime import datetime
-import pytz, jdatetime, telebot
+import jdatetime, telebot
 from telebot import types
 from openai import OpenAI
 
@@ -32,7 +31,7 @@ def load_data():
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-    except Exception:
+    except:
         data = base_data()
     for k in base_data():
         if k not in data:
@@ -81,11 +80,12 @@ def start_cmd(m):
     )
 
     msg = (
-        "👋 سلام به ربات مدیریتی و هوشمند Persian Lux خوش اومدی!\n\n"
-        "🤖 من می‌تونم گروهت رو مدیریت کنم، فال و جوک بگم، و حتی با هوش مصنوعی ChatGPT حرف بزنم!\n"
-        "✨ برای شروع می‌تونی منو به گروهت اضافه کنی یا با من حرف بزنی.\n\n"
-        "📅 تاریخ امروز: " + shamsi_date() + "\n"
-        "⏰ ساعت: " + shamsi_time()
+        "👋 سلام به ربات هوشمند و مدیریتی <b>Persian Lux</b> خوش اومدی!\n\n"
+        "🤖 من ساخته شده‌ام توسط <b>محمد نوری</b> ❤️\n"
+        "من می‌تونم گروهت رو مدیریت کنم، فال و جوک بگم، و حتی با هوش مصنوعی ChatGPT باهات حرف بزنم 😎\n\n"
+        "برای شروع می‌تونی منو به گروهت اضافه کنی یا همین‌جا باهام گپ بزنی 💬\n\n"
+        f"📅 تاریخ امروز: {shamsi_date()}\n"
+        f"⏰ ساعت: {shamsi_time()}"
     )
     bot.reply_to(m, msg, reply_markup=markup)
 
@@ -103,7 +103,7 @@ def handle_all(m):
 
     # پاسخ‌های پیش‌فرض ساده
     if text in ["سلام", "سلام ربات", "هی"]:
-        return bot.reply_to(m, f"✨ سلام {m.from_user.first_name}! چطور می‌تونم کمکت کنم؟")
+        return bot.reply_to(m, f"✨ سلام {m.from_user.first_name}! من ربات محمد نوری هستم 🤖 چطور می‌تونم کمکت کنم؟")
 
     # جوک
     if text == "جوک":
@@ -118,6 +118,24 @@ def handle_all(m):
         if falls:
             return bot.reply_to(m, f"🔮 فال امروز:\n{random.choice(falls)}")
         return bot.reply_to(m, "😅 هنوز فالی ثبت نشده!")
+
+    # ثبت جوک
+    if m.reply_to_message and text == "ثبت جوک" and is_sudo(m.from_user.id):
+        txt = (m.reply_to_message.text or "").strip()
+        if not txt:
+            return bot.reply_to(m, "⚠️ لطفاً روی پیام متنی ریپلای کن تا ذخیره کنم.")
+        data["jokes"].append(txt)
+        save_data(data)
+        return bot.reply_to(m, "✅ جوک جدید ثبت شد!")
+
+    # ثبت فال
+    if m.reply_to_message and text == "ثبت فال" and is_sudo(m.from_user.id):
+        txt = (m.reply_to_message.text or "").strip()
+        if not txt:
+            return bot.reply_to(m, "⚠️ لطفاً روی پیام متنی ریپلای کن تا ذخیره کنم.")
+        data["falls"].append(txt)
+        save_data(data)
+        return bot.reply_to(m, "✅ فال جدید ثبت شد!")
 
     # لیست جوک‌ها
     if text == "لیست جوک":
@@ -145,12 +163,12 @@ def handle_all(m):
             bot.reply_to(m, "❗ این دستور فقط در گروه کار می‌کند.")
         return
 
-    # اگر دستور خاصی نبود → ChatGPT
+    # پاسخ از ChatGPT اگر هیچ دستور خاصی نبود
     reply = ask_chatgpt(text)
     bot.reply_to(m, reply)
 
 # ================= 🚀 اجرای نهایی =================
-print("🤖 Persian Lux Smart Panel (ChatGPT Edition) در حال اجراست...")
+print("🤖 Persian Lux Smart Panel (ChatGPT Edition - Mohammad Noori) در حال اجراست...")
 while True:
     try:
         bot.infinity_polling(timeout=60, long_polling_timeout=30)
