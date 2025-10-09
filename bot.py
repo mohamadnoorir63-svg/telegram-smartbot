@@ -1,270 +1,215 @@
-# ===============================================
-# 🤖 ربات هوش مصنوعی نوری (نسخه نهایی)
-# مدیریت + هوش مصنوعی + پنل سودو + شارژ گروه‌ها
-# ===============================================
-
-import telebot, json, os, time, logging
+import telebot
 from telebot import types
+import openai
+import os, json
 from datetime import datetime, timedelta
-from openai import OpenAI
 
-# ---------- پیکربندی ----------
+# ⚙️ تنظیمات متغیرهای محیطی
 BOT_TOKEN = os.getenv("BOT_TOK")
 OPENAI_KEY = os.getenv("OPENAI_API_KEY")
-SUDO_ID = int(os.getenv("SUDO_ID"))
+SUDO_ID = int(os.getenv("SUDO_ID") or 0)
 
+openai.api_key = OPENAI_KEY
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
-client = OpenAI(api_key=OPENAI_KEY)
-logging.basicConfig(level=logging.INFO)
 
+# 📁 مدیریت داده‌ها
 DATA_FILE = "data.json"
 
-# ---------- ذخیره و بارگذاری ----------
 def load_data():
     if not os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump({"users": {}, "groups": {}, "bans": {}}, f)
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+        d = {"users": {}, "groups": {}, "bans": {}, "mutes": {}, "charges": {}}
+        save_data(d)
+        return d
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+    except:
+        d = {"users": {}, "groups": {}, "bans": {}, "mutes": {}, "charges": {}}
+    for key in ["users", "groups", "bans", "mutes", "charges"]:
+        if key not in d:
+            d[key] = {}
+    return d
 
-def save_data(data):
+def save_data(d):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+        json.dump(d, f, ensure_ascii=False, indent=2)
 
-def is_owner(uid): return uid == SUDO_ID
+d = load_data()
 
-def shamsi_now():
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-# ---------- ساخت منوی شیشه‌ای ----------
+# 🧠 منوی شروع
 def main_menu():
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("📘 راهنما", callback_data="help"),
-        types.InlineKeyboardButton("📞 ارتباط با سازنده", callback_data="contact"),
-    )
-    markup.add(
-        types.InlineKeyboardButton("💳 افزایش اعتبار", callback_data="buy"),
-        types.InlineKeyboardButton("⚙️ وضعیت ربات", callback_data="status"),
-    )
-    markup.add(types.InlineKeyboardButton("➕ افزودن به گروه", url="https://t.me/smartbot_noori_bot?startgroup=true"))
-    return markup
+    menu = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    menu.add("📘 راهنما", "👨‍💻 ارتباط با سازنده", "➕ افزودن من به گروه")
+    return menu
 
-# ---------- شروع /start ----------
-@bot.message_handler(commands=["start"])
-def start(m):
-    d = load_data()
-    uid = str(m.from_user.id)
-    if uid not in d["users"]:
-        d["users"][uid] = {"credits": 5, "ai_on": False, "muted_until": None}
+# 📜 راهنما
+HELP_TEXT = """
+🤖 <b>دستیار هوشمند نوری</b>
+
+سلام! من با هوش مصنوعی کار می‌کنم و می‌تونم بهت کمک کنم —  
+برای فعال شدن در گفتگو فقط بنویس:
+🔹 <b>ربات بگو</b> برای فعال‌سازی
+🔹 <b>ربات نگو</b> برای توقف پاسخ‌دهی
+
+اگر مدیر گروه هستی:
+• دستور <code>شارژ X</code> با ریپلای روی گروه: فعال برای X روز
+• دستور <code>بن</code> یا <code>سکوت</code> برای کنترل اعضا
+• دستور <code>لفت بده</code> برای خروج ربات از گروه
+"""
+
+# 🚀 استارت ربات
+@bot.message_handler(commands=['start'])
+def start(msg):
+    user = str(msg.from_user.id)
+    if user not in d["users"]:
+        d["users"][user] = {"limit": 5, "active": False}
         save_data(d)
-
-    name = m.from_user.first_name or "کاربر"
-    msg = (
-        f"سلام 👋 <b>{name}</b>!\n"
-        f"من <b>دستیار هوشمند نوری</b> هستم 🤖\n\n"
-        "می‌تونم با هوش مصنوعی بهت کمک کنم 💡\n"
-        "برای شروع بنویس: <b>ربات بگو</b> تا فعال شم.\n\n"
-        "✨ شما ۵ پیام رایگان دارید.\n\n"
-        "برای راهنما روی دکمه زیر بزن 👇"
+    name = msg.from_user.first_name
+    text = f"سلام 👋\nمن دستیار هوشمند نوری هستم 🤖!\nمی‌تونم با هوش مصنوعی کمکت کنم، {name} عزیز 💫\n\nبرای شروع بنویس <b>ربات بگو</b> تا فعال شم!\n👇 برای راهنما دکمه پایین رو بزن"
+    bot.send_message(msg.chat.id, text, reply_markup=main_menu())# 🎛 پنل مدیریت (فقط برای SUDO_ID)
+@bot.message_handler(commands=['panel'])
+def admin_panel(msg):
+    if msg.from_user.id != SUDO_ID:
+        return
+    markup = types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton("👥 لیست گروه‌ها", callback_data="groups"),
+        types.InlineKeyboardButton("🚫 لیست بن‌ها", callback_data="bans")
     )
-    bot.send_message(m.chat.id, msg, reply_markup=main_menu())
+    markup.add(
+        types.InlineKeyboardButton("🔋 شارژ گروه", callback_data="charge"),
+        types.InlineKeyboardButton("🔄 راه‌اندازی مجدد", callback_data="restart")
+    )
+    bot.send_message(msg.chat.id, "🔰 پنل مدیریتی فعال است:", reply_markup=markup)
 
-# ---------- فعال / غیرفعال کردن ربات ----------
-@bot.message_handler(func=lambda m: m.text and "ربات بگو" in m.text)
-def enable_ai(m):
-    d = load_data()
-    uid = str(m.from_user.id)
-    if uid not in d["users"]: return
-    d["users"][uid]["ai_on"] = True
+# 🪄 پاسخ به دکمه‌های پنل
+@bot.callback_query_handler(func=lambda c: True)
+def callback(c):
+    if c.from_user.id != SUDO_ID:
+        bot.answer_callback_query(c.id, "فقط سازنده می‌تواند از این بخش استفاده کند ❌", show_alert=True)
+        return
+
+    if c.data == "groups":
+        text = "📋 گروه‌های فعال:\n"
+        if not d["groups"]:
+            text += "هیچ گروه فعالی ثبت نشده."
+        else:
+            for g in d["groups"]:
+                text += f"• {g} — {d['groups'][g].get('expire', 'بدون زمان')}\n"
+        bot.send_message(c.message.chat.id, text)
+
+    elif c.data == "bans":
+        text = "🚫 کاربران بن‌شده:\n"
+        if not d["bans"]:
+            text += "لیست بن خالی است."
+        else:
+            for u in d["bans"]:
+                text += f"• {u}\n"
+        bot.send_message(c.message.chat.id, text)
+
+    elif c.data == "charge":
+        bot.send_message(c.message.chat.id, "برای شارژ گروه در خود گروه دستور زیر را بزن:\n\n<code>شارژ X</code> (X = تعداد روزها)")
+
+    elif c.data == "restart":
+        bot.send_message(c.message.chat.id, "♻️ ربات با موفقیت ریستارت شد.")
+        os._exit(0)
+
+
+# 🧠 فعال / غیرفعال کردن هوش مصنوعی
+@bot.message_handler(func=lambda m: m.text and m.text.lower() in ["ربات بگو", "ربات بگو🤖"])
+def activate_ai(msg):
+    uid = str(msg.from_user.id)
+    d["users"][uid]["active"] = True
     save_data(d)
-    bot.reply_to(m, "✨ هوش مصنوعی فعال شد!\nبپرس تا کمکت کنم 💬")
+    bot.send_message(msg.chat.id, "🤖 حالت هوش مصنوعی فعال شد! حالا می‌تونم باهات صحبت کنم 🌟")
 
-@bot.message_handler(func=lambda m: m.text and "ربات نگو" in m.text)
-def disable_ai(m):
-    d = load_data()
-    uid = str(m.from_user.id)
-    if uid not in d["users"]: return
-    d["users"][uid]["ai_on"] = False
+@bot.message_handler(func=lambda m: m.text and m.text.lower() in ["ربات نگو", "ربات نگو🤐"])
+def deactivate_ai(msg):
+    uid = str(msg.from_user.id)
+    d["users"][uid]["active"] = False
     save_data(d)
-    bot.reply_to(m, "😴 هوش مصنوعی غیرفعال شد.")
+    bot.send_message(msg.chat.id, "😶 حالت هوش مصنوعی غیرفعال شد!")
 
-# ---------- پاسخ هوش مصنوعی ----------
-def ask_ai(prompt):
+
+# 🚫 بن / سکوت / لفت بده
+@bot.message_handler(func=lambda m: m.reply_to_message and m.text.startswith("بن") and m.from_user.id == SUDO_ID)
+def ban_user(msg):
+    uid = str(msg.reply_to_message.from_user.id)
+    d["bans"][uid] = True
+    save_data(d)
+    bot.reply_to(msg.reply_to_message, "🚫 کاربر بن شد، دیگر پاسخی دریافت نمی‌کند.")
+
+@bot.message_handler(func=lambda m: m.reply_to_message and m.text.startswith("سکوت") and m.from_user.id == SUDO_ID)
+def mute_user(msg):
+    uid = str(msg.reply_to_message.from_user.id)
+    d["mutes"][uid] = (datetime.now() + timedelta(hours=5)).isoformat()
+    save_data(d)
+    bot.reply_to(msg.reply_to_message, "🔇 کاربر به مدت ۵ ساعت در سکوت است.")
+
+@bot.message_handler(func=lambda m: m.text.lower().startswith("لفت بده") and m.from_user.id == SUDO_ID)
+def leave_group(msg):
+    bot.send_message(msg.chat.id, "👋 با اجازه، از گروه خارج می‌شوم.")
+    bot.leave_chat(msg.chat.id)
+
+
+# ⚡ شارژ گروه
+@bot.message_handler(func=lambda m: m.reply_to_message and m.text.startswith("شارژ") and m.from_user.id == SUDO_ID)
+def charge_group(msg):
     try:
-        completion = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=200
-        )
-        return completion.choices[0].message.content
-    except Exception as e:
-        return f"⚠️ خطا در پاسخ هوش مصنوعی: {e}"
+        days = int(msg.text.split()[1])
+        gid = str(msg.reply_to_message.chat.id)
+        expire_date = (datetime.now() + timedelta(days=days)).isoformat()
+        d["groups"][gid] = {"expire": expire_date}
+        save_data(d)
+        bot.reply_to(msg.reply_to_message, f"✅ گروه برای {days} روز شارژ شد.")
+    except:
+        bot.reply_to(msg, "⚠️ دستور اشتباه است. مثال:\n<code>شارژ 3</code>")
 
+
+# 💬 پاسخ به پیام‌های کاربران
 @bot.message_handler(func=lambda m: True)
-def handle_message(m):
-    d = load_data()
-    uid = str(m.from_user.id)
+def handle_message(msg):
+    uid = str(msg.from_user.id)
+    cid = msg.chat.id
 
-    # بن / سکوت بررسی شود
+    # 🔹 جلوگیری از خطا در صورت حذف دیتا
+    if "bans" not in d: d["bans"] = {}
+    if "users" not in d: d["users"] = {}
+
+    # 🚫 بن‌شده‌ها
     if uid in d["bans"]:
-        bot.reply_to(m, "🚫 شما از استفاده از ربات بن شدید.")
         return
 
-    user = d["users"].get(uid, {"ai_on": False, "credits": 5})
-    muted_until = user.get("muted_until")
-    if muted_until and datetime.now() < datetime.fromisoformat(muted_until):
-        bot.reply_to(m, "⏳ شما تا پایان محدودیت سکوت نمی‌تونید پیام بدید.")
+    # 🔇 سکوت‌شده‌ها
+    if uid in d["mutes"]:
+        mute_until = datetime.fromisoformat(d["mutes"][uid])
+        if datetime.now() < mute_until:
+            return
+        else:
+            del d["mutes"][uid]
+            save_data(d)
+
+    # فقط اگر فعال بود پاسخ بده
+    if not d["users"].get(uid, {}).get("active", False):
         return
 
-    if not user["ai_on"]:
+    # بررسی محدودیت ۵ پیام
+    if d["users"][uid]["limit"] <= 0:
+        bot.send_message(cid, "⚠️ محدودیت پیام شما تمام شده.\nبرای ادامه، منتظر شارژ شوید یا دوباره فعال کنید.")
         return
 
-    # بررسی اعتبار پیام‌ها
-    if user["credits"] <= 0:
-        bot.reply_to(m, "⚠️ اعتبار شما تمام شده است. برای شارژ روی افزایش اعتبار بزنید 💳")
-        return
-
-    # پاسخ هوش مصنوعی
-    answer = ask_ai(m.text)
-    bot.reply_to(m, answer)
-
-    user["credits"] -= 1
-    d["users"][uid] = user
-    save_data(d)# =====================================================
-# 🔧 بخش مدیریتی ربات هوشمند نوری
-# شامل: بن، سکوت، شارژ، لفت، آمار، و پنل سودو
-# =====================================================
-
-# ---------- دکمه‌ها ----------
-def sudo_menu():
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("📊 آمار ربات", callback_data="stats"),
-        types.InlineKeyboardButton("📢 ارسال همگانی", callback_data="broadcast"),
-    )
-    markup.add(types.InlineKeyboardButton("🚪 لفت بده", callback_data="leave"))
-    return markup
-
-# ---------- پنل سودو ----------
-@bot.message_handler(commands=["panel"])
-def sudo_panel(m):
-    if not is_owner(m.from_user.id):
-        return bot.reply_to(m, "❌ فقط مدیر اصلی به این بخش دسترسی دارد.")
-    text = (
-        "⚙️ <b>پنل مدیریت هوش مصنوعی نوری</b>\n\n"
-        "از دکمه‌های زیر برای مدیریت ربات استفاده کنید 👇"
-    )
-    bot.send_message(m.chat.id, text, reply_markup=sudo_menu())
-
-# ---------- آمار ----------
-@bot.callback_query_handler(func=lambda c: c.data == "stats")
-def show_stats(c):
-    d = load_data()
-    users = len(d["users"])
-    groups = len(d["groups"])
-    bans = len(d["bans"])
-    actives = sum(1 for u in d["users"].values() if u.get("ai_on"))
-    msg = (
-        f"📊 <b>آمار کلی ربات</b>\n\n"
-        f"👤 کاربران: {users}\n"
-        f"👥 گروه‌ها: {groups}\n"
-        f"🚫 بن‌شده‌ها: {bans}\n"
-        f"⚡ فعال‌ها: {actives}\n"
-        f"🕓 زمان: {shamsi_now()}"
-    )
+    # 🎯 پاسخ هوش مصنوعی
     try:
-        bot.edit_message_text(msg, c.message.chat.id, c.message.message_id)
-    except:
-        bot.send_message(c.message.chat.id, msg)
-
-# ---------- ارسال همگانی ----------
-@bot.callback_query_handler(func=lambda c: c.data == "broadcast")
-def broadcast_start(c):
-    if c.from_user.id != SUDO_ID:
-        return
-    msg = bot.send_message(c.message.chat.id, "📝 لطفاً پیام همگانی خود را ارسال کنید:")
-    bot.register_next_step_handler(msg, process_broadcast)
-
-def process_broadcast(m):
-    d = load_data()
-    text = m.text
-    for uid in d["users"]:
-        try:
-            bot.send_message(uid, f"📢 پیام از مدیر:\n\n{text}")
-        except:
-            pass
-    bot.reply_to(m, "✅ پیام همگانی برای همه ارسال شد.")
-
-# ---------- لفت بده ----------
-@bot.callback_query_handler(func=lambda c: c.data == "leave")
-def leave_group(c):
-    if c.from_user.id != SUDO_ID:
-        return
-    bot.send_message(c.message.chat.id, "🚪 ربات از گروه خارج شد.")
-    bot.leave_chat(c.message.chat.id)
-
-# ---------- شارژ گروه ----------
-@bot.message_handler(func=lambda m: m.reply_to_message and m.text.startswith("شارژ"))
-def charge_user(m):
-    if not is_owner(m.from_user.id):
-        return
-    try:
-        days = int(m.text.split()[1])
-        target_id = str(m.reply_to_message.from_user.id)
-        d = load_data()
-        user = d["users"].get(target_id, {"credits": 0, "ai_on": True})
-        user["credits"] = 999999
-        user["expire"] = (datetime.now() + timedelta(days=days)).isoformat()
-        d["users"][target_id] = user
+        r = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": msg.text}]
+        )
+        answer = r.choices[0].message.content
+        bot.reply_to(msg, answer)
+        d["users"][uid]["limit"] -= 1
         save_data(d)
-        bot.reply_to(m, f"✅ کاربر برای {days} روز شارژ شد و محدودیت برداشته شد.")
-        bot.send_message(target_id, f"💳 حساب شما برای {days} روز فعال شد!")
     except Exception as e:
-        bot.reply_to(m, f"⚠️ خطا در شارژ: {e}")
+        bot.send_message(cid, f"❌ خطا در ارتباط با سرور:\n{e}")
 
-# ---------- بن ----------
-@bot.message_handler(func=lambda m: m.reply_to_message and m.text == "بن")
-def ban_user(m):
-    if not is_owner(m.from_user.id):
-        return
-    target_id = str(m.reply_to_message.from_user.id)
-    d = load_data()
-    d["bans"][target_id] = True
-    save_data(d)
-    bot.reply_to(m, "🚫 کاربر بن شد و دیگر پاسخی دریافت نخواهد کرد.")
-    bot.send_message(target_id, "⛔ شما از ربات بن شدید.")
-
-# ---------- سکوت ----------
-@bot.message_handler(func=lambda m: m.reply_to_message and m.text == "سکوت")
-def mute_user(m):
-    if not is_owner(m.from_user.id):
-        return
-    target_id = str(m.reply_to_message.from_user.id)
-    d = load_data()
-    user = d["users"].get(target_id, {"ai_on": True})
-    user["muted_until"] = (datetime.now() + timedelta(hours=5)).isoformat()
-    d["users"][target_id] = user
-    save_data(d)
-    bot.reply_to(m, "🔇 کاربر برای ۵ ساعت در حالت سکوت قرار گرفت.")
-    bot.send_message(target_id, "🤫 شما به مدت ۵ ساعت در سکوت هستید.")
-
-# ---------- راهنما ----------
-@bot.callback_query_handler(func=lambda c: c.data == "help")
-def show_help(c):
-    text = (
-        "📘 <b>راهنمای ربات هوشمند نوری</b>\n\n"
-        "💡 دستورات اصلی:\n"
-        "🔹 بنویس «ربات بگو» تا فعال شم.\n"
-        "🔹 بنویس «ربات نگو» تا خاموش شم.\n"
-        "🔹 با من صحبت کن، هر سوالی داشتی بپرس!\n\n"
-        "📦 اعتبار پیش‌فرض: ۵ پیام رایگان.\n"
-        "برای افزایش پیام یا شارژ با مدیر تماس بگیر 💳"
-    )
-    try:
-        bot.edit_message_text(text, c.message.chat.id, c.message.message_id, reply_markup=main_menu())
-    except:
-        bot.send_message(c.message.chat.id, text, reply_markup=main_menu())
-
-# ---------- اجرای مداوم ----------
-bot.infinity_polling(timeout=30, long_polling_timeout=10)
+# 🔁 اجرای همیشگی ربات
+bot.infinity_polling()
