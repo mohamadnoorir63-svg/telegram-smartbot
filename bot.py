@@ -24,25 +24,26 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 DATA_FILE = "data.json"
 DEFAULT_FREE_COINS = 5
 
+
 def now_ts():
     return int(time.time())
+
 
 def load_data():
     if not os.path.exists(DATA_FILE):
         data = {
-            "users": {},              # uid -> {coins, active, name, last_photo_desc}
-            "banned": [],             # [uid]
-            "muted": {},              # uid -> expire_ts
-            "groups": {},             # gid -> {expires, active}
-            "support_open": {},       # uid -> True/False
-            "admin_reply_to": None,   # uid (در حالت پاسخ پشتیبانی)
+            "users": {},          # uid -> {coins, active, name}
+            "banned": [],         # [uid]
+            "muted": {},          # uid -> expire_ts
+            "groups": {},         # gid -> {expires, active}
+            "support_open": {},   # uid -> True/False
+            "admin_reply_to": None,
             "pending_broadcast": False
         }
         save_data(data)
         return data
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         d = json.load(f)
-    # در صورت نبود کلیدها
     d.setdefault("users", {})
     d.setdefault("banned", [])
     d.setdefault("muted", {})
@@ -52,23 +53,23 @@ def load_data():
     d.setdefault("pending_broadcast", False)
     return d
 
+
 def save_data(d):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(d, f, ensure_ascii=False, indent=2)
 
+
 data = load_data()
 
-def is_admin(uid): return int(uid) == int(ADMIN_ID)
+
+def is_admin(uid): 
+    return int(uid) == int(ADMIN_ID)
+
 
 def ensure_user(uid, name=""):
     suid = str(uid)
     if suid not in data["users"]:
-        data["users"][suid] = {
-            "coins": DEFAULT_FREE_COINS,
-            "active": True,
-            "name": name or "",
-            "last_photo_desc": ""
-        }
+        data["users"][suid] = {"coins": DEFAULT_FREE_COINS, "active": True, "name": name or ""}
         save_data(data)
 
 # --------- KEYBOARDS ---------
@@ -80,6 +81,7 @@ def kb_user(uid):
     kb.row(types.KeyboardButton("روشن / خاموش 🧠"))
     return kb
 
+
 def kb_admin():
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
     kb.row(types.KeyboardButton("آمار کاربران 📊"), types.KeyboardButton("شارژ کاربر 💰"))
@@ -89,11 +91,12 @@ def kb_admin():
     kb.row(types.KeyboardButton("بازگشت BACK"))
     return kb
 
+
 def ikb_support(uid):
     ik = types.InlineKeyboardMarkup()
     ik.add(
         types.InlineKeyboardButton("پاسخ به کاربر ✉️", callback_data=f"reply:{uid}"),
-        types.InlineKeyboardButton("بستن گفتگو ❌",   callback_data=f"close:{uid}")
+        types.InlineKeyboardButton("بستن گفتگو ❌", callback_data=f"close:{uid}")
     )
     return ik
 
@@ -103,7 +106,7 @@ def start_cmd(m):
     uid = m.from_user.id
     ensure_user(uid, f"{m.from_user.first_name or ''} {m.from_user.last_name or ''}".strip())
     if is_admin(uid):
-        bot.reply_to(m, f"👑 سلام رئیس! وارد پنل مدیریتی شدی.", reply_markup=kb_admin())
+        bot.reply_to(m, "👑 سلام رئیس! وارد پنل مدیریتی شدی.", reply_markup=kb_admin())
     else:
         bot.reply_to(
             m,
@@ -117,10 +120,12 @@ def start_cmd(m):
 @bot.message_handler(func=lambda m: m.chat.type == "private" and is_admin(m.from_user.id))
 def admin_private(m):
     txt = (m.text or "").strip()
+    
+    # ارسال همگانی
     if txt == "ارسال همگانی 📣":
         data["pending_broadcast"] = True
         save_data(data)
-        bot.reply_to(m, "✍️ پیام خود را بفرست تا برای همه کاربران و گروه‌ها ارسال شود.\n(لغو با: «بازگشت BACK»)")
+        bot.reply_to(m, "✍️ پیام خود را همینجا بفرست تا برای همه ارسال شود.\n(برای انصراف: «بازگشت BACK»)")
         return
 
     if data.get("pending_broadcast"):
@@ -147,34 +152,23 @@ def admin_private(m):
         bot.reply_to(m, f"📣 ارسال شد. موفق: {ok} | ناموفق: {fail}")
         return
 
+    # آمار
     if txt == "آمار کاربران 📊":
         total = len(data["users"])
         total_ban = len(data["banned"])
-        total_mute = len([1 for k,v in data["muted"].items() if v > now_ts()])
+        total_mute = len([1 for k, v in data["muted"].items() if v > now_ts()])
         bot.reply_to(m, f"📈 کاربران: {total}\n🚫 بن‌شده: {total_ban}\n🤐 در سکوت: {total_mute}")
+        return# دستورات نوشتاری سودو
+    parts = txt.replace("‌", " ").split()
+    if not parts: 
         return
-
-    if txt == "بازگشت BACK":
-        bot.reply_to(m,
-            "دستورات سودو (فقط خصوصی):\n"
-            "• شارژ [uid] [تعداد]\n"
-            "• بن [uid] | حذف بن [uid]\n"
-            "• سکوت [uid] [ساعت] | حذف سکوت [uid]\n"
-            "• در گروه: شارژ گروه [روز] | لفت بده\n"
-            "• لیست بن‌ها | لیست سکوت‌ها",
-            reply_markup=kb_admin())
-        return
-
-    parts = txt.replace("‌"," ").split()
-    if not parts: return
-
     try:
         if parts[0] == "شارژ" and len(parts) == 3:
             uid = int(parts[1]); count = int(parts[2])
             ensure_user(uid)
             data["users"][str(uid)]["coins"] += count
             save_data(data)
-            bot.reply_to(m, f"✅ {count} سکه به کاربر {uid} اضافه شد.")
+            bot.reply_to(m, f"✅ به کاربر {uid} تعداد {count} سکه اضافه شد.")
             try: bot.send_message(uid, f"💰 سکه‌های شما {count} عدد شارژ شد.")
             except: pass
             return
@@ -213,26 +207,47 @@ def admin_private(m):
     except Exception as e:
         bot.reply_to(m, f"❌ خطا: {e}")
 
-# --------- USER PANEL ---------
-@bot.message_handler(func=lambda m: m.chat.type=="private" and not is_admin(m.from_user.id))
+# --------- GROUP ADMIN COMMANDS ---------
+@bot.message_handler(func=lambda m: m.chat.type in ["group","supergroup"] and is_admin(m.from_user.id))
+def admin_in_group(m):
+    txt = (m.text or "").strip()
+    parts = txt.split()
+    if txt == "لفت بده":
+        try:
+            bot.reply_to(m, "👋 خداحافظ! از گروه خارج شدم.")
+            bot.leave_chat(m.chat.id)
+        except Exception as e:
+            bot.reply_to(m, f"❌ خطا در خروج از گروه.\n{e}")
+        return
+    if len(parts) == 3 and parts[0] == "شارژ" and parts[1] == "گروه":
+        days = int(parts[2])
+        gid = str(m.chat.id)
+        until = now_ts() + days * 86400
+        data["groups"].setdefault(gid, {"expires": 0, "active": True})
+        data["groups"][gid]["expires"] = until
+        save_data(data)
+        bot.reply_to(m, f"✅ گروه به مدت {days} روز شارژ شد.")
+        return
+
+# --------- USER PANEL (PRIVATE) ---------
+@bot.message_handler(func=lambda m: m.chat.type == "private" and not is_admin(m.from_user.id))
 def user_private(m):
     uid = m.from_user.id
-    ensure_user(uid)
-    cu = data["users"][str(uid)]
+    ensure_user(uid, f"{m.from_user.first_name or ''} {m.from_user.last_name or ''}".strip())
     txt = (m.text or "").strip()
 
+    # بن / سکوت
     if str(uid) in data["banned"]: return
     if str(uid) in data["muted"] and data["muted"][str(uid)] > now_ts(): return
 
-    # ادامه در بخش بعد 👇# ===== دکمه‌ها =====
+    # دکمه‌ها
     if txt == "راهنما 💡":
         bot.reply_to(m,
             "📘 راهنما:\n"
-            "• با ارسال متن، جواب هوش مصنوعی رو می‌گیری.\n"
-            "• با ارسال عکس، تحلیل تصویری دریافت می‌کنی.\n"
-            f"• هر پیام ۱ سکه مصرف می‌کند (موجودی: <b>{cu['coins']}</b>).\n"
-            "• برای ادامه یک تحلیل قبلی، بنویس: «ادامه تحلیل».\n"
-            "• پشتیبانی برای ارتباط مستقیم با مدیر است.")
+            "• با ارسال متن، پاسخ هوش مصنوعی را می‌گیری.\n"
+            "• با ارسال عکس، تحلیل تصویری می‌گیری.\n"
+            f"• هر پیام ۱ سکه مصرف می‌کند. موجودی فعلی: <b>{data['users'][str(uid)]['coins']}</b>\n"
+            "• برای خاموش/روشن کردن، از دکمه «روشن / خاموش 🧠» استفاده کن.")
         return
 
     if txt == "سازنده 👤":
@@ -240,17 +255,17 @@ def user_private(m):
         return
 
     if txt == "افزودن به گروه ➕":
-        bot.reply_to(m, "برای افزودن من به گروه، فقط منو به گروه اضافه کن و دسترسی ارسال پیام بده.\nسپس مدیر می‌تونه بنویسه:\n<b>شارژ گروه [روز]</b>")
+        bot.reply_to(m, "من را به گروه اضافه کنید و مدیر بگویید «شارژ گروه [روز]» تا فعال شوم.")
         return
 
     if txt == "شارژ مجدد 🟩":
-        bot.reply_to(m, "برای شارژ سکه با «پشتیبانی ☎️» تماس بگیر.")
+        bot.reply_to(m, "برای شارژ سکه با پشتیبانی تماس بگیر: «پشتیبانی ☎️»")
         return
 
     if txt == "پشتیبانی ☎️":
         data["support_open"][str(uid)] = True
         save_data(data)
-        bot.reply_to(m, "✉️ گفتگوی پشتیبانی باز شد. هر پیامی بفرستی برای سازنده ارسال می‌شود.\nبرای خروج: «پایان پشتیبانی»")
+        bot.reply_to(m, "✉️ گفتگوی پشتیبانی باز شد. پیام بده تا به سازنده برسد. برای خروج: «پایان پشتیبانی»")
         try:
             bot.send_message(ADMIN_ID, f"📥 پیام جدید از کاربر {uid}")
         except: pass
@@ -263,61 +278,37 @@ def user_private(m):
         return
 
     if txt == "روشن / خاموش 🧠":
+        cu = data["users"][str(uid)]
         cu["active"] = not cu["active"]
         save_data(data)
-        bot.reply_to(m,
-            "✅ حالت گفتگو فعال شد." if cu["active"] else "⛔️ گفتگو با هوش غیرفعال شد.",
-            reply_markup=kb_user(uid))
+        msg = "✅ حالت گفتگو با هوش فعال شد." if cu["active"] else "⛔️ حالت گفتگو غیرفعال شد."
+        bot.reply_to(m, msg, reply_markup=kb_user(uid))
         return
 
-    # اگر در حالت پشتیبانی است → ارسال به ادمین
+    # پشتیبانی فعال؟
     if data["support_open"].get(str(uid)):
         try:
             bot.copy_message(ADMIN_ID, m.chat.id, m.message_id, reply_markup=ikb_support(uid))
             bot.reply_to(m, "📨 پیام به پشتیبانی ارسال شد.")
         except Exception as e:
-            bot.reply_to(m, f"❌ خطا در ارسال به پشتیبانی: {e}")
+            bot.reply_to(m, f"❌ خطا در ارسال به پشتیبانی:\n{e}")
         return
 
-    # حالت غیرفعال یا بدون سکه
+    # فعال بودن هوش و سکه
+    cu = data["users"][str(uid)]
     if not cu.get("active", True):
-        bot.reply_to(m, "⏸ حالت گفتگو غیرفعال است.")
-        return
+        return bot.reply_to(m, "⏸ حالت گفتگو غیرفعال است.")
     if cu.get("coins", 0) <= 0:
-        bot.reply_to(m, "💸 سکه شما تمام شده است.")
-        return
+        return bot.reply_to(m, "💸 سکه شما تمام شده است. با «پشتیبانی ☎️» شارژ کن.")
 
-    # ---- حالت "ادامه تحلیل" ----
-    if txt.startswith("ادامه تحلیل"):
-        last_desc = cu.get("last_photo_desc")
-        if not last_desc:
-            bot.reply_to(m, "❗ تحلیلی برای ادامه وجود ندارد. ابتدا عکسی ارسال کن یا موضوعی بنویس.")
-            return
-        prompt = txt.replace("ادامه تحلیل", "").strip() or "ادامه بده"
-        try:
-            resp = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "You are a helpful AI that continues previous Persian analysis."},
-                    {"role": "user", "content": f"{last_desc}\n\nادامه و گسترش بر اساس: {prompt}"}
-                ]
-            )
-            answer = resp.choices[0].message.content
-            bot.reply_to(m, f"🔁 ادامه تحلیل:\n{answer}")
-            cu["coins"] -= 1
-            save_data(data)
-        except Exception as e:
-            bot.reply_to(m, f"❌ خطا در ادامه تحلیل: {e}")
-        return
-
-    # ---- حالت عادی: متن به هوش مصنوعی ----
+    # 🧠 متنی → GPT-4o
     if m.content_type == "text" and (m.text or "").strip():
         ask_text = (m.text or "").strip()
         try:
             resp = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": "You are a helpful AI that answers in Persian."},
+                    {"role": "system", "content": "You are a helpful Persian-speaking AI assistant."},
                     {"role": "user", "content": ask_text}
                 ]
             )
@@ -326,107 +317,60 @@ def user_private(m):
             cu["coins"] -= 1
             save_data(data)
         except Exception as e:
-            bot.reply_to(m, f"❌ خطایی در پاسخ هوش مصنوعی رخ داد.\n{e}")
+            bot.reply_to(m, f"❌ خطا در پاسخ هوش مصنوعی:\n{e}")
         return
 
-# --------- PHOTO → VISION ---------
+
+# --------- PHOTO → GPT-4o Vision ---------
 @bot.message_handler(content_types=["photo"])
 def handle_photo(m):
     uid = m.from_user.id
     ensure_user(uid)
-    cu = data["users"][str(uid)]
-
     if str(uid) in data["banned"]: return
     if str(uid) in data["muted"] and data["muted"][str(uid)] > now_ts(): return
 
+    # پشتیبانی باز؟
     if m.chat.type == "private" and data["support_open"].get(str(uid)):
         try:
             bot.copy_message(ADMIN_ID, m.chat.id, m.message_id, reply_markup=ikb_support(uid))
             bot.reply_to(m, "📨 عکس به پشتیبانی ارسال شد.")
         except Exception as e:
-            bot.reply_to(m, f"❌ خطا در ارسال عکس به پشتیبانی:\n{e}")
+            bot.reply_to(m, f"❌ خطا در ارسال:\n{e}")
         return
 
-    if m.chat.type == "private":
-        if not cu.get("active", True):
-            return bot.reply_to(m, "⏸ حالت گفتگو غیرفعال است.")
-        if cu.get("coins", 0) <= 0:
-            return bot.reply_to(m, "💸 سکه شما تمام شده است.")
+    cu = data["users"][str(uid)]
+    if not cu.get("active", True):
+        return bot.reply_to(m, "⏸ حالت گفتگو غیرفعال است.")
+    if cu.get("coins", 0) <= 0:
+        return bot.reply_to(m, "💸 سکه شما تمام شده است.")
 
-        try:
-            file_info = bot.get_file(m.photo[-1].file_id)
-            file_url  = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}"
-            resp = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type":"text","text":"این تصویر را توصیف و تحلیل کن."},
-                        {"type":"image_url","image_url":{"url": file_url}}
-                    ]
-                }]
-            )
-            answer = resp.choices[0].message.content
-            cu["last_photo_desc"] = answer  # ذخیره تحلیل برای ادامه
-            save_data(data)
-            bot.reply_to(m, f"🖼️ تحلیل تصویر:\n{answer}")
-            cu["coins"] -= 1
-            save_data(data)
-        except Exception as e:
-            bot.reply_to(m, f"❌ خطا در تحلیل تصویر:\n{e}")
-
-# --------- پشتیبانی (ادمین ↔ کاربر) ---------
-@bot.callback_query_handler(func=lambda c: c.data and (c.data.startswith("reply:") or c.data.startswith("close:")))
-def cb_support(c):
-    if not is_admin(c.from_user.id):
-        return bot.answer_callback_query(c.id, "فقط مدیر.")
     try:
-        action, raw = c.data.split(":", 1)
-        uid = int(raw)
-        if action == "reply":
-            data["admin_reply_to"] = uid
-            save_data(data)
-            bot.answer_callback_query(c.id, "✅ حالت پاسخ فعال شد.")
-            bot.send_message(c.message.chat.id, f"اکنون هر پیامی بفرستید برای کاربر {uid} ارسال می‌شود.\nبرای بستن: «پایان {uid}»")
-        elif action == "close":
-            data["support_open"][str(uid)] = False
-            if data.get("admin_reply_to") == uid:
-                data["admin_reply_to"] = None
-            save_data(data)
-            bot.answer_callback_query(c.id, "🔒 گفتگو بسته شد.")
-            try: bot.send_message(uid, "🔒 گفتگوی پشتیبانی بسته شد.")
-            except: pass
-    except Exception as e:
-        bot.answer_callback_query(c.id, f"خطا: {e}")
-
-@bot.message_handler(func=lambda m: m.chat.type=="private" and is_admin(m.from_user.id) and data.get("admin_reply_to"))
-def admin_replying(m):
-    target = data.get("admin_reply_to")
-    try:
-        bot.copy_message(target, m.chat.id, m.message_id)
-        bot.reply_to(m, f"✅ ارسال شد برای {target}")
-    except Exception as e:
-        bot.reply_to(m, f"❌ خطا در ارسال: {e}")
-
-@bot.message_handler(func=lambda m: m.chat.type=="private" and is_admin(m.from_user.id))
-def admin_close_cmd(m):
-    txt = (m.text or "").strip()
-    parts = txt.split()
-    if len(parts)==2 and parts[0]=="پایان":
-        uid = int(parts[1])
-        data["support_open"][str(uid)] = False
-        if data.get("admin_reply_to") == uid:
-            data["admin_reply_to"] = None
+        file_info = bot.get_file(m.photo[-1].file_id)
+        file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}"
+        resp = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "این تصویر را به‌طور کامل توصیف و تحلیل کن."},
+                    {"type": "image_url", "image_url": {"url": file_url}}
+                ]
+            }]
+        )
+        answer = resp.choices[0].message.content
+        bot.reply_to(m, f"🖼️ تحلیل تصویر:\n{answer}")
+        cu["coins"] -= 1
         save_data(data)
-        bot.reply_to(m, f"🔒 گفتگوی کاربر {uid} بسته شد.")
+    except Exception as e:
+        bot.reply_to(m, f"❌ خطا در تحلیل تصویر:\n{e}")
 
-# --------- پاسخ به گروه ---------
+
+# --------- GROUP AI (mention / 'ربات ') ---------
 @bot.message_handler(func=lambda m: m.chat.type in ["group","supergroup"])
 def group_ai(m):
     uid = m.from_user.id
     if str(uid) in data["banned"]: return
     if str(uid) in data["muted"] and data["muted"][str(uid)] > now_ts(): return
-
     text = (m.text or "").strip()
     if not text: return
 
@@ -441,25 +385,26 @@ def group_ai(m):
     g = data["groups"].get(gid, {"expires":0,"active":False})
     if g.get("expires",0) < now_ts():
         if is_admin(uid):
-            bot.reply_to(m, "⛔️ شارژ گروه تمام شده. بنویس: «شارژ گروه [روز]».")
+            bot.reply_to(m, "⛔️ شارژ گروه تمام شده. مدیر باید «شارژ گروه [روز]» بزند.")
         return
     if g.get("active") is False: return
 
-    prompt = text.replace("ربات ","").strip() or text
+    prompt = text.replace("ربات ", "").strip() or text
     try:
         resp = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             messages=[
-                {"role":"system","content":"You are a helpful AI that answers in Persian."},
-                {"role":"user","content": prompt}
+                {"role": "system", "content": "You are a helpful AI that replies in Persian."},
+                {"role": "user", "content": prompt}
             ]
         )
         answer = resp.choices[0].message.content
         bot.reply_to(m, f"🤖 {answer}")
     except Exception as e:
-        if is_admin(uid): bot.reply_to(m, f"❌ خطا: {e}")
+        if is_admin(uid):
+            bot.reply_to(m, f"❌ خطا: {e}")
 
-# --------- RUN ---------
+# --------- POLLING ---------
 if __name__ == "__main__":
     print("Bot is running...")
     bot.infinity_polling(skip_pending=True, timeout=20)
