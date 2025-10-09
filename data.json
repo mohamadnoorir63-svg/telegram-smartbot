@@ -1,1 +1,9 @@
-echo '{"users": {}, "coins": {}, "banned": [], "muted": {}, "ai_active": true}' > data.json
+{
+  "users": {},
+  "coins": {},
+  "banned": [],
+  "muted": {},
+  "ai_active": true,
+  "groups": {},
+  "support": {}
+}
