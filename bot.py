@@ -7,7 +7,7 @@ from openai import OpenAI
 BOT_TOKEN        = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY   = os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_KEY")
 ADMIN_ID         = int(os.getenv("ADMIN_ID") or "0")  # عددی
-ADMIN_USERNAME   = os.getenv("ADMIN_USERNAME") or "@NOORI_NOOR"  # اختیاری برای دکمه «سازنده»
+ADMIN_USERNAME   = os.getenv("ADMIN_USERNAME") or "@NOORI_NOOR"  # برای دکمه سازنده/پشتیبانی
 BOT_NAME_FARSI   = "ربات هوشمند نوری 🤖"
 
 if not BOT_TOKEN:
@@ -28,28 +28,34 @@ def now_ts():
     return int(time.time())
 
 def load_data():
+    # ساخت فایل پایه + اطمینان از کلیدها
+    base = {
+        "users": {},              # uid -> {coins, active, name}
+        "banned": [],             # [uid(str)]
+        "muted": {},              # uid(str) -> expire_ts
+        "groups": {},             # gid(str) -> {expires, active}
+        "support_open": {},       # uid(str) -> True/False
+        "admin_reply_to": None,   # uid یا None
+        "pending_broadcast": False
+    }
     if not os.path.exists(DATA_FILE):
-        data = {
-            "users": {},              # uid -> {coins, active, name}
-            "banned": [],             # [uid]
-            "muted": {},              # uid -> expire_ts
-            "groups": {},             # gid -> {expires, active}
-            "support_open": {},       # uid -> True/False
-            "admin_reply_to": None,   # uid (در حالت پاسخ پشتیبانی)
-            "pending_broadcast": False
-        }
-        save_data(data)
-        return data
+        save_data(base)
+        return base
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         d = json.load(f)
-    # در صورت نبود کلیدها
-    d.setdefault("users", {})
-    d.setdefault("banned", [])
-    d.setdefault("muted", {})
-    d.setdefault("groups", {})
-    d.setdefault("support_open", {})
-    d.setdefault("admin_reply_to", None)
-    d.setdefault("pending_broadcast", False)
+    # تکمیل کلیدهای جاافتاده
+    for k, v in base.items():
+        if k not in d:
+            d[k] = v
+    # تکمیل ساختارهای داخلی
+    if not isinstance(d.get("users"), dict): d["users"] = {}
+    if not isinstance(d.get("banned"), list): d["banned"] = []
+    if not isinstance(d.get("muted"), dict): d["muted"] = {}
+    if not isinstance(d.get("groups"), dict): d["groups"] = {}
+    if not isinstance(d.get("support_open"), dict): d["support_open"] = {}
+    if "admin_reply_to" not in d: d["admin_reply_to"] = None
+    if "pending_broadcast" not in d: d["pending_broadcast"] = False
+    save_data(d)
     return d
 
 def save_data(d):
@@ -58,13 +64,29 @@ def save_data(d):
 
 data = load_data()
 
-def is_admin(uid): return int(uid) == int(ADMIN_ID)
+def is_admin(uid): 
+    try: 
+        return int(uid) == int(ADMIN_ID)
+    except:
+        return False
 
 def ensure_user(uid, name=""):
     suid = str(uid)
     if suid not in data["users"]:
         data["users"][suid] = {"coins": DEFAULT_FREE_COINS, "active": True, "name": name or ""}
         save_data(data)
+
+def get_bot_username():
+    try:
+        return bot.get_me().username or "NoorirSmartBot"
+    except:
+        return "NoorirSmartBot"
+
+def get_bot_id():
+    try:
+        return bot.get_me().id
+    except:
+        return None
 
 # --------- KEYBOARDS ---------
 def kb_user(uid):
@@ -75,13 +97,23 @@ def kb_user(uid):
     kb.row(types.KeyboardButton("روشن / خاموش 🧠"))
     return kb
 
+def ikb_user_deeplink():
+    ik = types.InlineKeyboardMarkup()
+    bot_un = get_bot_username()
+    add_url = f"https://t.me/{bot_un}?startgroup=add"
+    # سازنده/پشتیبانی مستقیم
+    admin_user = ADMIN_USERNAME.replace("@","")
+    support_url = f"https://t.me/{admin_user}"
+    ik.add(types.InlineKeyboardButton("➕ افزودن به گروه", url=add_url))
+    ik.add(types.InlineKeyboardButton("ارتباط مستقیم با سازنده", url=support_url))
+    return ik
+
 def kb_admin():
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.row(types.KeyboardButton("آمار کاربران 📊"), types.KeyboardButton("شارژ کاربر 💰"))
+    kb.row(types.KeyboardButton("آمار کاربران 📊"), types.KeyboardButton("ارسال همگانی 📣"))
     kb.row(types.KeyboardButton("سکوت کاربر 🤐"), types.KeyboardButton("بن کاربر 🚫"))
     kb.row(types.KeyboardButton("لیست بن‌ها 🚫"), types.KeyboardButton("لیست سکوت‌ها 🤫"))
-    kb.row(types.KeyboardButton("ارسال همگانی 📣"), types.KeyboardButton("لفت بده ↩️"))
-    kb.row(types.KeyboardButton("بازگشت BACK"))
+    kb.row(types.KeyboardButton("راهنمای سودو 📘"), types.KeyboardButton("لفت بده ↩️"))
     return kb
 
 def ikb_support(uid):
@@ -99,18 +131,50 @@ def start_cmd(m):
     ensure_user(uid, f"{m.from_user.first_name or ''} {m.from_user.last_name or ''}".strip())
     if is_admin(uid):
         bot.reply_to(m,
-            f"👑 سلام رئیس! وارد پنل مدیریتی شدی.",
+            "👑 سلام رئیس! این پنل مدیریت شماست.\n"
+            "پیام همگانی، سکوت/بن، و شارژ گروه را از اینجا مدیریت کن.",
             reply_markup=kb_admin())
     else:
         bot.reply_to(
             m,
             f"سلام! 👋 به <b>{BOT_NAME_FARSI}</b> خوش اومدی.\n"
-            "اینجا می‌تونی با هوش مصنوعی حرف بزنی یا عکس بفرستی تا تحلیل کنه.\n"
-            f"هر کاربر {DEFAULT_FREE_COINS} پیام رایگان داره؛ بعدش با «شارژ مجدد 🟩» ادامه بده.",
+            "• با ارسال متن یا عکس در پی‌وی، پاسخ هوش مصنوعی می‌گیری.\n"
+            f"• هر کاربر <b>{DEFAULT_FREE_COINS}</b> پیام رایگان دارد، بعدش «شارژ مجدد 🟩» را بزن.\n"
+            "• برای فعال/غیرفعال: «روشن / خاموش 🧠».",
             reply_markup=kb_user(uid)
         )
+        # دکمه‌های بالایی (inline) برای افزودن به گروه و تماس مستقیم با سازنده
+        try:
+            bot.send_message(uid, "می‌تونی از این دکمه‌ها استفاده کنی:", reply_markup=ikb_user_deeplink())
+        except: pass
 
-# --------- ADMIN PANEL BUTTONS ---------
+# --------- ADMIN REPLY MODE (باید بالاتر از هندلرِ ادمین پرایوت باشد) ---------
+@bot.message_handler(func=lambda m: m.chat.type=="private" and is_admin(m.from_user.id) and data.get("admin_reply_to"))
+def admin_replying(m):
+    target = data.get("admin_reply_to")
+    try:
+        bot.copy_message(target, m.chat.id, m.message_id)
+        bot.reply_to(m, f"✅ ارسال شد برای {target}")
+    except Exception as e:
+        bot.reply_to(m, f"❌ خطا در ارسال: {e}")
+
+# بستن گفتگو از سمت ادمین: «پایان [uid]»
+@bot.message_handler(func=lambda m: m.chat.type=="private" and is_admin(m.from_user.id))
+def admin_close_cmd(m):
+    txt = (m.text or "").strip()
+    parts = txt.split()
+    if len(parts)==2 and parts[0]=="پایان":
+        try:
+            uid = int(parts[1])
+            data["support_open"][str(uid)] = False
+            if data.get("admin_reply_to") == uid:
+                data["admin_reply_to"] = None
+            save_data(data)
+            bot.reply_to(m, f"🔒 گفتگوی کاربر {uid} بسته شد.")
+        except:
+            pass
+
+# --------- ADMIN PANEL BUTTONS (خصوصی) ---------
 @bot.message_handler(func=lambda m: m.chat.type == "private" and is_admin(m.from_user.id))
 def admin_private(m):
     txt = (m.text or "").strip()
@@ -119,23 +183,24 @@ def admin_private(m):
     if txt == "ارسال همگانی 📣":
         data["pending_broadcast"] = True
         save_data(data)
-        bot.reply_to(m, "✍️ پیام خود را همینجا بفرست؛ همان پیام برای همهٔ کاربران و گروه‌ها کپی می‌شود.\n(برای انصراف: «بازگشت BACK»)")
+        bot.reply_to(m, "✍️ پیام خود را همینجا بفرست؛ همان پیام برای همهٔ کاربران و گروه‌ها کپی می‌شود.\n(برای انصراف: «لغو»)")
         return
 
     if data.get("pending_broadcast"):
-        if txt == "بازگشت BACK":
+        if txt == "لغو":
             data["pending_broadcast"] = False
             save_data(data)
             bot.reply_to(m, "ارسال همگانی لغو شد.")
             return
-        # کپی پیام برای همه
         ok, fail = 0, 0
+        # ارسال به همه کاربران
         for suid in list(data["users"].keys()):
             try:
                 bot.copy_message(int(suid), m.chat.id, m.message_id)
                 ok += 1
             except:
                 fail += 1
+        # ارسال به همه گروه‌ها
         for sgid in list(data["groups"].keys()):
             try:
                 bot.copy_message(int(sgid), m.chat.id, m.message_id)
@@ -151,31 +216,28 @@ def admin_private(m):
     if txt == "آمار کاربران 📊":
         total = len(data["users"])
         total_ban = len(data["banned"])
-        total_mute = len([1 for k,v in data["muted"].items() if v > now_ts()])
-        bot.reply_to(m, f"📈 کاربران: {total}\n🚫 بن‌شده: {total_ban}\n🤐 در سکوت: {total_mute}")
+        total_mute = len([1 for _,t in data["muted"].items() if t > now_ts()])
+        total_groups = len(data["groups"])
+        bot.reply_to(m, f"📈 کاربران: {total}\n👥 گروه‌ها: {total_groups}\n🚫 بن‌شده: {total_ban}\n🤐 در سکوت: {total_mute}")
         return
 
-    # راهنمای دستورات نوشتاری سودو
-    if txt == "بازگشت BACK":
+    # راهنما
+    if txt == "راهنمای سودو 📘":
         bot.reply_to(m,
-            "دستورات تایپی سودو (فقط خصوصی):\n"
-            "• <b>شارژ [uid] [تعداد]</b> ← افزودن سکه به کاربر\n"
-            "• <b>بن [uid]</b> | <b>حذف بن [uid]</b>\n"
-            "• <b>سکوت [uid] [ساعت]</b> | <b>حذف سکوت [uid]</b>\n"
-            "• در گروه: <b>شارژ گروه [روز]</b> | <b>لفت بده</b>\n"
-            "• <b>لیست بن‌ها</b> | <b>لیست سکوت‌ها</b>",
-            reply_markup=kb_admin())
+            "دستورات تایپی سودو (خصوصی):\n"
+            "• شارژ [uid] [تعداد]\n"
+            "• بن [uid] | حذف بن [uid]\n"
+            "• سکوت [uid] [ساعت] | حذف سکوت [uid]\n"
+            "• لفت گروه [آیدی] | لفت همه گروه‌ها\n"
+            "— داخل گروه: شارژ گروه [روز] | لفت بده")
         return
 
-    # راه میانبر برای راهنمای هر دکمه
-    if txt == "شارژ کاربر 💰":
-        bot.reply_to(m, "فرمت درست: 💰 شارژ [uid] [تعداد]")
-        return
+    # راهنمای دکمه‌ها
     if txt == "بن کاربر 🚫":
-        bot.reply_to(m, "فرمت درست: 🚫 بن [uid]")
+        bot.reply_to(m, "✅ بن: «بن [uid]» | رفع: «حذف بن [uid]»")
         return
     if txt == "سکوت کاربر 🤐":
-        bot.reply_to(m, "فرمت درست: 🤐 سکوت [uid] [ساعت]")
+        bot.reply_to(m, "✅ سکوت: «سکوت [uid] [ساعت]» | رفع: «حذف سکوت [uid]»")
         return
     if txt == "لیست بن‌ها 🚫":
         if not data["banned"]:
@@ -192,10 +254,10 @@ def admin_private(m):
             bot.reply_to(m, "📜 لیست سکوت‌ها:\n" + "\n".join([f"• {x}" for x in alive]))
         return
     if txt == "لفت بده ↩️":
-        bot.reply_to(m, "این دستور را داخل گروه بزن تا از همان گروه خارج شوم: «لفت بده»")
+        bot.reply_to(m, "این دستور را داخل گروه بزن تا از همان گروه خارج شوم: «لفت بده»\nاز راه دور: «لفت گروه [آیدی]»")
         return
 
-    # دستورات نوشتاری سودو
+    # دستورات نوشتاری سودو (خصوصی)
     parts = txt.replace("‌"," ").split()
     if not parts: return
 
@@ -257,8 +319,91 @@ def admin_private(m):
                 bot.reply_to(m, "📜 لیست سکوت‌ها:\n" + "\n".join([f"• {x}" for x in alive]))
             return
 
+        # از راه دور: لفت گروه [آیدی]
+        if parts[0] == "لفت" and len(parts) == 3 and parts[1] == "گروه":
+            gid = int(parts[2])
+            try:
+                bot.send_message(gid, "👋 ربات به درخواست ادمین از گروه خارج می‌شود. خداحافظ 🌸")
+            except:
+                pass
+            try:
+                bot.leave_chat(gid)
+                bot.reply_to(m, f"✅ از گروه <code>{gid}</code> خارج شدم.")
+            except Exception as e:
+                bot.reply_to(m, f"❗ خطا در خروج از گروه:\n{e}")
+            return
+
+        # لفت همه گروه‌ها
+        if txt == "لفت همه گروه‌ها":
+            left, fail = 0, 0
+            for gid in list(data["groups"].keys()):
+                try:
+                    bot.leave_chat(int(gid))
+                    left += 1
+                except:
+                    fail += 1
+            bot.reply_to(m, f"↩️ خارج شدم از {left} گروه | ناموفق: {fail}")
+            return
+
     except Exception as e:
         bot.reply_to(m, f"❌ خطا: {e}")
+
+# --------- ADDED TO GROUP (خوش‌آمد + اطلاع به ادمین) ---------
+@bot.message_handler(content_types=["new_chat_members"])
+def greet_on_add(m):
+    try:
+        bot_id = get_bot_id()
+        if not bot_id: 
+            return
+        # اگر خودِ ربات عضو جدید است
+        for u in m.new_chat_members:
+            if u.id == bot_id:
+                gid = str(m.chat.id)
+                # ثبت گروه با وضعیت غیرفعال تا شارژ شود
+                data["groups"].setdefault(gid, {"expires": 0, "active": True})
+                save_data(data)
+                # پیام در گروه
+                bot.send_message(m.chat.id,
+                    "سلام! من اضافه شدم 🌸\n"
+                    "برای فعال‌سازی پاسخ هوش مصنوعی در این گروه، مدیر بنویسد:\n"
+                    "• «شارژ گروه 1» (یک روز)\n"
+                    "سپس در پیام‌ها با پیشوند «ربات ...» از من چیزی بخواهید.")
+                # اطلاع به ادمین
+                try:
+                    bot.send_message(ADMIN_ID, f"➕ ربات به گروه جدید اضافه شد:\n"
+                                               f"عنوان: {m.chat.title}\n"
+                                               f"آیدی: <code>{m.chat.id}</code>")
+                except: pass
+                break
+    except:
+        pass
+
+# همچنین اگر از نوع my_chat_member هم بیاید:
+try:
+    @bot.my_chat_member_handler(func=lambda upd: True)
+    def on_my_status(upd):
+        try:
+            bot_id = get_bot_id()
+            if not bot_id: return
+            if upd.new_chat_member and upd.new_chat_member.user and upd.new_chat_member.user.id == bot_id:
+                if upd.new_chat_member.status in ("member", "administrator"):
+                    gid = str(upd.chat.id)
+                    data["groups"].setdefault(gid, {"expires": 0, "active": True})
+                    save_data(data)
+                    # خوش آمد مختصر
+                    try:
+                        bot.send_message(upd.chat.id,
+                            "سلام! برای فعال‌سازی، مدیر بنویسد: «شارژ گروه 1» 🌟")
+                    except: pass
+                    try:
+                        bot.send_message(ADMIN_ID, f"➕ اضافه شدم به گروه:\n"
+                                                   f"عنوان: {upd.chat.title}\n"
+                                                   f"آیدی: <code>{upd.chat.id}</code>")
+                    except: pass
+        except:
+            pass
+except:
+    pass
 
 # --------- GROUP ADMIN COMMANDS ---------
 @bot.message_handler(func=lambda m: m.chat.type in ["group","supergroup"] and is_admin(m.from_user.id))
@@ -274,14 +419,20 @@ def admin_in_group(m):
             bot.reply_to(m, f"❌ خطا در خروج از گروه.\n{e}")
         return
 
+    # شارژ گروه [روز]
     if len(parts) == 3 and parts[0] == "شارژ" and parts[1] == "گروه":
-        days = int(parts[2])
+        try:
+            days = int(parts[2])
+        except:
+            return bot.reply_to(m, "⚠️ فرمت درست: «شارژ گروه 1» (یک روز)")
+
         gid = str(m.chat.id)
         until = now_ts() + days*86400
         data["groups"].setdefault(gid, {"expires":0,"active":True})
         data["groups"][gid]["expires"] = until
+        data["groups"][gid]["active"]  = True
         save_data(data)
-        bot.reply_to(m, f"✅ گروه به مدت {days} روز شارژ شد.")
+        bot.reply_to(m, f"✅ گروه به مدت {days} روز شارژ شد. از این پس با «ربات …» پاسخ می‌دهم.")
         return
 
 # --------- USER PANEL (PRIVATE) ---------
@@ -301,11 +452,11 @@ def user_private(m):
     if txt == "راهنما 💡":
         bot.reply_to(m,
             "راهنما:\n"
-            "• با ارسال متن، جواب هوش مصنوعی رو می‌گیری.\n"
-            "• با ارسال عکس، تحلیل تصویری می‌گیری.\n"
-            f"• هر پیام 1 سکه مصرف می‌کند. موجودی فعلی شما: <b>{data['users'][str(uid)]['coins']}</b>\n"
-            "• «روشن / خاموش 🧠» فقط برای خودت فعاله.\n"
-            "• پشتیبانی: پیام‌هایت به سازنده وصل می‌شود.")
+            "• با ارسال «متن»، پاسخ هوش مصنوعی می‌گیری.\n"
+            "• با ارسال «عکس»، تحلیل تصویری می‌گیری.\n"
+            f"• هر پیام 1 سکه مصرف می‌کند. موجودی فعلی: <b>{data['users'][str(uid)]['coins']}</b>\n"
+            "• دکمه «روشن / خاموش 🧠» فقط برای خودت است.\n"
+            "• برای شارژ: «پشتیبانی ☎️».")
         return
 
     if txt == "سازنده 👤":
@@ -313,7 +464,12 @@ def user_private(m):
         return
 
     if txt == "افزودن به گروه ➕":
-        bot.reply_to(m, "من را به گروه اضافه کنید و به من دسترسی پیام بدهید. سپس مدیر داخل گروه می‌تواند «شارژ گروه [روز]» را بزند.")
+        # ارسال Deep-link واقعی
+        bot_un = get_bot_username()
+        add_url = f"https://t.me/{bot_un}?startgroup=add"
+        ik = types.InlineKeyboardMarkup()
+        ik.add(types.InlineKeyboardButton("➕ افزودن به گروه", url=add_url))
+        bot.reply_to(m, "برای افزودن، روی دکمه زیر بزنید:", reply_markup=ik)
         return
 
     if txt == "شارژ مجدد 🟩":
@@ -354,10 +510,10 @@ def user_private(m):
             bot.reply_to(m, f"❌ خطا در ارسال به پشتیبانی:\n{e}")
         return
 
-    # در غیر این صورت: پیام برای هوش مصنوعی (در صورت فعال بودن و داشتن سکه)
+    # پیام برای هوش مصنوعی (در صورت فعال بودن و داشتن سکه)
     cu = data["users"][str(uid)]
     if not cu.get("active", True):
-        bot.reply_to(m, "⏸ حالت گفتگو غیرفعال است. دکمه «روشن / خاموش 🧠» را بزن.")
+        bot.reply_to(m, "⏸ حالت گفتگو غیرفعال است. «روشن / خاموش 🧠» را بزن.")
         return
     if cu.get("coins", 0) <= 0:
         bot.reply_to(m, "💸 سکه شما تمام شده است. با «پشتیبانی ☎️» شارژ کن.")
@@ -372,159 +528,4 @@ def user_private(m):
                 messages=[
                     {"role": "system", "content": "You are a helpful AI that answers in Persian."},
                     {"role": "user", "content": ask_text}
-                ]
-            )
-            answer = resp.choices[0].message.content
-            bot.reply_to(m, f"🤖 {answer}")
-            cu["coins"] -= 1
-            save_data(data)
-        except Exception as e:
-            bot.reply_to(m, f"❌ خطایی در پاسخ هوش مصنوعی رخ داد.\n{e}")
-        return
-
-# --------- PHOTO → VISION ---------
-@bot.message_handler(content_types=["photo"])
-def handle_photo(m):
-    uid = m.from_user.id
-    ensure_user(uid)
-    # ممنوع/سکوت
-    if str(uid) in data["banned"]: return
-    if str(uid) in data["muted"] and data["muted"][str(uid)] > now_ts(): return
-
-    # اگر پشتیبانی باز است → به ادمین کپی شود
-    if m.chat.type == "private" and data["support_open"].get(str(uid)):
-        try:
-            bot.copy_message(ADMIN_ID, m.chat.id, m.message_id, reply_markup=ikb_support(uid))
-            bot.reply_to(m, "📨 عکس به پشتیبانی ارسال شد.")
-        except Exception as e:
-            bot.reply_to(m, f"❌ خطا در ارسال به پشتیبانی:\n{e}")
-        return
-
-    # در خصوصی و حالت فعال و موجودی
-    if m.chat.type == "private":
-        cu = data["users"][str(uid)]
-        if not cu.get("active", True):
-            return bot.reply_to(m, "⏸ حالت گفتگو غیرفعال است.")
-        if cu.get("coins", 0) <= 0:
-            return bot.reply_to(m, "💸 سکه شما تمام شده است.")
-
-        try:
-            file_info = bot.get_file(m.photo[-1].file_id)
-            file_url  = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}"
-            resp = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type":"text","text":"این تصویر را توصیف و تحلیل کن."},
-                        {"type":"image_url","image_url":{"url": file_url}}
-                    ]
-                }]
-            )
-            answer = resp.choices[0].message.content
-            bot.reply_to(m, f"🖼️ تحلیل تصویر:\n{answer}")
-            cu["coins"] -= 1
-            save_data(data)
-        except Exception as e:
-            bot.reply_to(m, f"❌ خطا در تحلیل تصویر:\n{e}")
-
-# --------- SUPPORT CALLBACKS ---------
-@bot.callback_query_handler(func=lambda c: c.data and (c.data.startswith("reply:") or c.data.startswith("close:")))
-def cb_support(c):
-    if not is_admin(c.from_user.id):
-        return bot.answer_callback_query(c.id, "فقط مدیر.")
-    try:
-        action, raw = c.data.split(":", 1)
-        uid = int(raw)
-        if action == "reply":
-            data["admin_reply_to"] = uid
-            save_data(data)
-            bot.answer_callback_query(c.id, "حالت پاسخ فعال شد.")
-            bot.send_message(c.message.chat.id, f"✍️ اکنون هر پیامی بفرستید برای کاربر {uid} ارسال می‌شود. برای بستن: «پایان [uid]»")
-        elif action == "close":
-            data["support_open"][str(uid)] = False
-            if data.get("admin_reply_to") == uid:
-                data["admin_reply_to"] = None
-            save_data(data)
-            bot.answer_callback_query(c.id, "گفتگو بسته شد.")
-            try: bot.send_message(uid, "🔒 گفتگوی پشتیبانی بسته شد.")
-            except: pass
-    except Exception as e:
-        bot.answer_callback_query(c.id, f"خطا: {e}")
-
-# پیام ادمین در حالت پاسخ پشتیبانی
-@bot.message_handler(func=lambda m: m.chat.type=="private" and is_admin(m.from_user.id) and data.get("admin_reply_to"))
-def admin_replying(m):
-    target = data.get("admin_reply_to")
-    try:
-        bot.copy_message(target, m.chat.id, m.message_id)
-        bot.reply_to(m, f"✅ ارسال شد برای {target}")
-    except Exception as e:
-        bot.reply_to(m, f"❌ خطا در ارسال: {e}")
-
-# دستور بستن از سمت ادمین: «پایان [uid]»
-@bot.message_handler(func=lambda m: m.chat.type=="private" and is_admin(m.from_user.id))
-def admin_close_cmd(m):
-    txt = (m.text or "").strip()
-    parts = txt.split()
-    if len(parts)==2 and parts[0]=="پایان":
-        uid = int(parts[1])
-        data["support_open"][str(uid)] = False
-        if data.get("admin_reply_to") == uid:
-            data["admin_reply_to"] = None
-        save_data(data)
-        bot.reply_to(m, f"🔒 گفتگوی کاربر {uid} بسته شد.")
-
-# --------- GROUP AI (mention or startswith 'ربات ') ---------
-@bot.message_handler(func=lambda m: m.chat.type in ["group","supergroup"])
-def group_ai(m):
-    # نادیده گرفتن اگر بن/سکوت
-    uid = m.from_user.id
-    if str(uid) in data["banned"]: return
-    if str(uid) in data["muted"] and data["muted"][str(uid)] > now_ts(): return
-
-    text = (m.text or "").strip()
-    if not text:
-        return
-
-    # فقط وقتی از ربات چیزی بخوانند
-    want = False
-    if text.startswith("ربات "): want = True
-    if bot.get_me().username and ("@" + bot.get_me().username.lower()) in text.lower(): want = True
-    if m.reply_to_message and m.reply_to_message.from_user and m.reply_to_message.from_user.id == bot.get_me().id:
-        want = True
-    if not want:
-        return
-
-    # شارژ گروه
-    gid = str(m.chat.id)
-    g = data["groups"].get(gid, {"expires":0,"active":False})
-    if g.get("expires",0) < now_ts():
-        if is_admin(uid):
-            bot.reply_to(m, "⛔️ شارژ گروه تمام شده. «شارژ گروه [روز]» را بزن.")
-        return
-    if g.get("active") is False:
-        return
-
-    prompt = text.replace("ربات ","").strip()
-    if not prompt:
-        prompt = "به این پیام پاسخ بده: " + text
-
-    try:
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role":"system","content":"You are a helpful AI that answers in Persian."},
-                {"role":"user","content": prompt}
-            ]
-        )
-        answer = resp.choices[0].message.content
-        bot.reply_to(m, f"🤖 {answer}")
-    except Exception as e:
-        if is_admin(uid):
-            bot.reply_to(m, f"❌ خطا: {e}")
-
-# --------- POLLING ---------
-if __name__ == "__main__":
-    print("Bot is running...")
-    bot.infinity_polling(skip_pending=True, timeout=20)
+   
