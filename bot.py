@@ -1,37 +1,28 @@
-# -*- coding: utf-8 -*-
-# SmartBot Noori Plus 💎
-# Coded by Mohammad Noori
-# Version 1.0 (AI + Management)
-
-import os, json, random, time, logging
-import telebot
-from telebot import types
+import telebot, json, time, logging, os
 from datetime import datetime, timedelta
-from openai import OpenAI
+import openai
 
-# تنظیمات
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-OPENAI_KEY = os.environ.get("OPENAI_API_KEY")
-SUDO_ID = int(os.environ.get("SUDO_ID", "0"))
+# 🌟 تنظیمات اصلی
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+OPENAI_KEY = os.getenv("OPENAI_API_KEY")
+SUDO_ID = 612345678  # آیدی عددی تو (تغییر بده)
+
+openai.api_key = OPENAI_KEY
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
-client = OpenAI(api_key=OPENAI_KEY)
-
-DATA_FILE = "data.json"
-LOG_FILE = "error.log"
-
-logging.basicConfig(filename=LOG_FILE, level=logging.ERROR, format="%(asctime)s - %(message)s")
 
 # 📁 فایل داده
+DATA_FILE = "data.json"
+if not os.path.exists(DATA_FILE):
+    with open(DATA_FILE, "w") as f:
+        json.dump({"users": {}, "groups": {}, "active_ai": True}, f)
+
 def load_data():
-    if not os.path.exists(DATA_FILE):
-        data = {"users": {}, "active_ai": True, "groups": []}
-        save_data(data)
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
+    with open(DATA_FILE, "r") as f:
         return json.load(f)
 
 def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f, indent=2)
 
 def user_register(uid):
     data = load_data()
@@ -39,184 +30,164 @@ def user_register(uid):
         data["users"][str(uid)] = {"messages": 0, "charged_until": None}
         save_data(data)
 
-# 🧠 پاسخ هوش مصنوعی
+# 💬 درخواست به ChatGPT
 def ask_ai(prompt):
     try:
-        completion = client.chat.completions.create(
+        res = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}]
         )
-        return completion.choices[0].message.content
+        return res.choices[0].message["content"]
     except Exception as e:
-        logging.error(str(e))
-        return "⚠️ مشکلی در ارتباط با سرور پیش آمد."
+        return f"⚠️ خطا در اتصال به سرور: {e}"
 
-# 💬 دکمه‌های شیشه‌ای
+# 🎛 کیبورد اصلی
 def main_keyboard():
-    kb = types.InlineKeyboardMarkup()
+    kb = telebot.types.InlineKeyboardMarkup()
     kb.add(
-        types.InlineKeyboardButton("➕ افزودن به گروه", url=f"https://t.me/{bot.get_me().username}?startgroup=true"),
-        types.InlineKeyboardButton("💬 پشتیبانی", url="https://t.me/NOORI_NOOR")
+        telebot.types.InlineKeyboardButton("📚 راهنما", callback_data="help"),
+        telebot.types.InlineKeyboardButton("📞 ارتباط با سازنده", callback_data="contact")
     )
     kb.add(
-        types.InlineKeyboardButton("💎 راهنما", callback_data="help"),
-        types.InlineKeyboardButton("📨 ارتباط با سازنده", callback_data="contact")
+        telebot.types.InlineKeyboardButton("💎 افزایش اعتبار", url="https://t.me/NOORI_NOOR"),
+        telebot.types.InlineKeyboardButton("➕ افزودن به گروه", url=f"https://t.me/{bot.get_me().username}?startgroup=true")
     )
-    return kb# ================= ⚙️ کنترل هوش مصنوعی و شارژ =================
+    return kb# ===================== ⚙️ مدیریت و کنترل =====================
 
-@bot.message_handler(commands=["start"])
-def start_cmd(m):
+@bot.message_handler(commands=['start'])
+def start_message(m):
     user_register(m.from_user.id)
+    name = m.from_user.first_name
     bot.send_message(
         m.chat.id,
-        "✨ سلام به ربات هوش مصنوعی <b>SmartBot Noori Plus</b> خوش اومدی!\n"
-        "🤖 من یه دستیار هوشمندم که می‌تونم باهات حرف بزنم، برنامه بنویسم، متن تولید کنم و کلی کار دیگه 💡\n\n"
-        "برای استفاده بنویس:\n"
-        "<b>ربات بگو</b> 👉 تا فعال شم\n"
-        "<b>ربات نگو</b> 👉 تا ساکت شم\n"
-        "💎 هر کاربر ۵ پیام رایگان دارد!\n\n"
-        "👑 سازنده: <a href='https://t.me/NOORI_NOOR'>محمد نوری</a>",
+        f"👋 سلام <b>{name}</b>!\n"
+        "من 🤖 <b>ربات هوش مصنوعی نوری</b> هستم.\n\n"
+        "✨ شما ۵ پیام رایگان دارید.\n"
+        "برای شروع بنویس <b>ربات بگو</b> تا فعال شم 💬\n\n"
+        "از منوهای زیر استفاده کن 👇",
         reply_markup=main_keyboard()
     )
 
-# 🔘 روشن/خاموش هوش مصنوعی
-@bot.message_handler(func=lambda m: m.text and m.text.lower() in ["ربات بگو", "ربات روشن"])
-def ai_on(m):
+@bot.message_handler(func=lambda m: m.text and m.text.lower() == "ربات بگو")
+def turn_on_ai(m):
     data = load_data()
     data["active_ai"] = True
     save_data(data)
-    bot.reply_to(m, "🤖 هوش مصنوعی فعال شد!\n✨ بگو چه کمکی می‌تونم بکنم؟")
+    bot.reply_to(m, "✅ هوش مصنوعی فعال شد.\nچه کمکی می‌تونم بکنم؟ 💡")
 
-@bot.message_handler(func=lambda m: m.text and m.text.lower() in ["ربات نگو", "ربات خاموش"])
-def ai_off(m):
+@bot.message_handler(func=lambda m: m.text and m.text.lower() == "ربات نگو")
+def turn_off_ai(m):
     data = load_data()
     data["active_ai"] = False
     save_data(data)
-    bot.reply_to(m, "😴 هوش مصنوعی غیرفعال شد.")
+    bot.reply_to(m, "🤖 هوش مصنوعی غیرفعال شد.\nبرای فعال‌سازی دوباره بنویس <b>ربات بگو</b>")
 
-# 🚪 لفت بده (فقط سودو)
-@bot.message_handler(func=lambda m: m.text == "لفت بده" and m.from_user.id == SUDO_ID)
-def leave_group(m):
-    bot.reply_to(m, "🚪 با اجازه! در حال ترک گروه هستم...")
-    bot.leave_chat(m.chat.id)
-
-# 💎 شارژ کاربر (فقط سودو)
-@bot.message_handler(func=lambda m: m.text and m.text.startswith("شارژ ") and m.from_user.id == SUDO_ID)
+@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith("شارژ "))
 def charge_user(m):
+    if m.from_user.id != SUDO_ID:
+        return
     try:
-        if not m.reply_to_message:
-            return bot.reply_to(m, "⚠️ لطفاً روی پیام کاربر ریپلای کن.")
-        days = int(m.text.split()[1])
-        uid = str(m.reply_to_message.from_user.id)
-        data = load_data()
-        exp = datetime.now() + timedelta(days=days)
-        data["users"][uid]["charged_until"] = exp.strftime("%Y-%m-%d %H:%M:%S")
-        save_data(data)
-        bot.reply_to(m, f"💎 کاربر برای {days} روز شارژ شد.")
-        bot.send_message(int(uid), f"✅ حساب شما برای {days} روز فعال شد.\nاز هوش مصنوعی بدون محدودیت استفاده کنید 💬")
-    except Exception as e:
-        bot.reply_to(m, f"❗ خطا در شارژ: {e}")
+        days = int(m.text.split(" ")[1])
+        if m.reply_to_message:
+            uid = m.reply_to_message.from_user.id
+            data = load_data()
+            exp = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d %H:%M")
+            data["users"][str(uid)]["charged_until"] = exp
+            save_data(data)
+            bot.reply_to(m, f"✅ کاربر {uid} برای {days} روز شارژ شد 🌟")
+            bot.send_message(uid, f"💎 حساب شما تا {exp} فعال شد!\nاز ربات بدون محدودیت استفاده کن 😍")
+    except:
+        bot.reply_to(m, "❌ فرمت نادرست است. روی پیام کاربر ریپلای بزن و بنویس:\n<code>شارژ 3</code>")
 
-# 📊 آمار و ارسال همگانی
-@bot.message_handler(func=lambda m: m.text == "آمار" and m.from_user.id == SUDO_ID)
-def show_stats(m):
+@bot.message_handler(func=lambda m: m.text and m.text.lower() == "لفت بده")
+def leave_group(m):
+    if m.from_user.id == SUDO_ID and m.chat.type in ["group", "supergroup"]:
+        bot.send_message(m.chat.id, "👋 خداحافظ! به امید دیدار 💫")
+        bot.leave_chat(m.chat.id)
+
+# 🎯 پاسخ به پیام‌ها
+@bot.message_handler(func=lambda m: True)
+def chat_ai(m):
+    if m.chat.type not in ["private", "group", "supergroup"]:
+        return
+
     data = load_data()
-    total = len(data["users"])
-    groups = len(data["groups"])
-    bot.reply_to(m, f"📈 آمار ربات:\n👤 کاربران: {total}\n👥 گروه‌ها: {groups}")
+    user_register(m.from_user.id)
+    user = data["users"][str(m.from_user.id)]
+    ai_on = data["active_ai"]
 
-@bot.message_handler(func=lambda m: m.text == "ارسال همگانی" and m.from_user.id == SUDO_ID and m.reply_to_message)
-def broadcast(m):
-    data = load_data()
-    total = 0
-    for uid in data["users"]:
-        try:
-            bot.copy_message(uid, m.chat.id, m.reply_to_message.message_id)
-            total += 1
-        except:
-            pass
-    bot.reply_to(m, f"📢 پیام به {total} نفر ارسال شد.")
-
-# 💬 پاسخ خودکار هوش مصنوعی (۵ پیام رایگان)
-@bot.message_handler(func=lambda m: True, content_types=["text"])
-def ai_reply(m):
-    data = load_data()
-    uid = str(m.from_user.id)
-    user_register(uid)
-
-    # اگر هوش مصنوعی خاموش باشد
-    if not data.get("active_ai", True):
+    # بررسی فعال بودن هوش مصنوعی
+    if not ai_on:
         return
 
     # بررسی شارژ
-    user = data["users"].get(uid, {})
-    exp_str = user.get("charged_until")
+    charged = user["charged_until"]
     now = datetime.now()
+    if charged:
+        if now < datetime.strptime(charged, "%Y-%m-%d %H:%M"):
+            reply = ask_ai(m.text)
+            bot.reply_to(m, reply)
+            return
 
-    if exp_str and datetime.strptime(exp_str, "%Y-%m-%d %H:%M:%S") > now:
-        limit = 99999  # نامحدود در زمان شارژ
+    # بررسی تعداد پیام رایگان
+    if user["messages"] < 5:
+        reply = ask_ai(m.text)
+        bot.reply_to(m, reply)
+        user["messages"] += 1
+        save_data(data)
     else:
-        limit = 5  # فقط ۵ پیام رایگان
+        bot.reply_to(m, "⚠️ اعتبار رایگان شما تمام شد.\nبرای شارژ مجدد به پشتیبانی پیام دهید 💌 @NOORI_NOOR")# ===================== 🌐 پنل و راهنما =====================
 
-    # شمارش پیام‌ها
-    count = user.get("messages", 0)
-    if count >= limit:
-        bot.reply_to(m, "⚠️ شارژ رایگان شما تمام شد.\nبرای فعال‌سازی مجدد با پشتیبانی در تماس باشید 💎")
+# ✳️ راهنما
+@bot.callback_query_handler(func=lambda c: c.data == "help")
+def help_callback(c):
+    bot.answer_callback_query(c.id)
+    msg = (
+        "📘 <b>راهنمای استفاده از ربات نوری</b>\n\n"
+        "✨ برای شروع بنویس: <b>ربات بگو</b>\n"
+        "🤫 برای خاموش کردن بنویس: <b>ربات نگو</b>\n"
+        "🧠 ازم بپرس هر چی خواستی — برنامه‌نویسی، ترجمه، مشاوره و حتی شعر! 😄\n\n"
+        "💎 هر کاربر ۵ پیام رایگان دارد، برای استفاده نامحدود باید شارژ شود.\n"
+        "📨 جهت شارژ به پشتیبانی پیام بده 👉 @NOORI_NOOR"
+    )
+    bot.edit_message_text(msg, c.message.chat.id, c.message.message_id, reply_markup=main_keyboard())
+
+# ✉️ ارتباط با سازنده
+waiting_contact = {}
+
+@bot.callback_query_handler(func=lambda c: c.data == "contact")
+def contact_callback(c):
+    bot.answer_callback_query(c.id)
+    uid = c.from_user.id
+    waiting_contact[uid] = True
+    bot.send_message(uid, "📩 پیام خود را بنویسید تا برای سازنده ارسال شود:")
+
+@bot.message_handler(func=lambda m: m.from_user.id in waiting_contact)
+def forward_to_owner(m):
+    del waiting_contact[m.from_user.id]
+    bot.send_message(SUDO_ID, f"📬 پیام از {m.from_user.first_name} ({m.from_user.id}):\n\n{m.text}")
+    bot.reply_to(m, "✅ پیام شما برای سازنده ارسال شد.\nمنتظر پاسخ باشید 💬")
+
+# 💚 وضعیت ربات و شارژ
+@bot.callback_query_handler(func=lambda c: c.data == "status")
+def status_callback(c):
+    bot.answer_callback_query(c.id)
+    data = load_data()
+    user = data["users"].get(str(c.from_user.id))
+    if not user:
+        bot.send_message(c.from_user.id, "❌ شما هنوز ثبت‌نام نکردید. بنویس /start")
         return
 
-    # پاسخ از ChatGPT
-    reply = ask_ai(m.text)
-    bot.reply_to(m, reply)
+    charged_until = user.get("charged_until")
+    if charged_until:
+        status = f"💎 تا تاریخ {charged_until} فعال هستی."
+    else:
+        status = f"⚠️ هنوز شارژ نداری. پیام‌های رایگان: {max(0, 5 - user['messages'])}"
 
-    # افزایش شمارش
-    user["messages"] = count + 1
-    data["users"][uid] = user
-    save_data(data)# ================= 🎛 پنل شیشه‌ای و پشتیبانی =================
+    bot.send_message(c.from_user.id, f"📊 وضعیت شما:\n{status}", reply_markup=main_keyboard())
 
-@bot.callback_query_handler(func=lambda c: c.data == "help")
-def help_panel(c):
-    text = (
-        "💎 <b>راهنمای SmartBot Noori Plus</b>\n\n"
-        "🤖 من یه ربات هوشمندم که می‌تونم باهات حرف بزنم، برنامه بنویسم، شعر بگم، ترجمه کنم و حتی متن تولید کنم!\n\n"
-        "📘 <b>دستورات کاربردی:</b>\n"
-        "• <code>ربات بگو</code> → فعال‌سازی هوش مصنوعی\n"
-        "• <code>ربات نگو</code> → خاموش‌کردن هوش مصنوعی\n"
-        "• <code>لفت بده</code> → خروج ربات از گروه (فقط سودو)\n"
-        "• <code>شارژ X</code> → شارژ کاربر برای X روز (فقط سودو)\n\n"
-        "⚙️ کاربران معمولی ۵ پیام رایگان دارند.\n"
-        "💎 بعد از شارژ، استفاده نامحدود خواهد بود.\n\n"
-        "👑 سازنده: <a href='https://t.me/NOORI_NOOR'>محمد نوری</a>"
-    )
-    bot.edit_message_text(text, c.message.chat.id, c.message.message_id, parse_mode="HTML", reply_markup=main_keyboard())
-
-# 📬 ارتباط با سازنده
-@bot.callback_query_handler(func=lambda c: c.data == "contact")
-def contact_start(c):
-    bot.send_message(c.message.chat.id, "📨 پیام خود را برای ارسال به سازنده بنویس:")
-    bot.register_next_step_handler_by_chat_id(c.message.chat.id, forward_to_admin)
-
-def forward_to_admin(m):
-    try:
-        bot.forward_message(SUDO_ID, m.chat.id, m.message_id)
-        bot.reply_to(m, "✅ پیام شما برای پشتیبانی ارسال شد.\nمنتظر پاسخ باشید 💬")
-        bot.send_message(SUDO_ID, f"📩 پیام جدید از <a href='tg://user?id={m.from_user.id}'>{m.from_user.first_name}</a>:", parse_mode="HTML")
-    except Exception as e:
-        bot.reply_to(m, f"⚠️ خطا در ارسال پیام: {e}")
-
-# 📥 پاسخ از طرف سودو به کاربر
-@bot.message_handler(func=lambda m: m.reply_to_message and m.chat.id == SUDO_ID)
-def reply_from_admin(m):
-    if m.reply_to_message.forward_from:
-        uid = m.reply_to_message.forward_from.id
-        bot.send_message(uid, f"📨 پاسخ از پشتیبانی:\n{m.text}")
-
-# ================= 🚀 اجرای نهایی =================
-
-print("🤖 SmartBot Noori Plus is Running...")
-
-while True:
-    try:
-        bot.infinity_polling(timeout=60, long_polling_timeout=30)
-    except Exception as e:
-        logging.error(f"Polling crash: {e}")
-        time.sleep(5)
+# ===================== 🚀 اجرای نهایی =====================
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    print("🤖 Bot is running...")
+    bot.infinity_polling(timeout=60, long_polling_timeout=60)
