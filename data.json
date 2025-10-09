@@ -1,9 +1,9 @@
 {
   "users": {},
-  "coins": {},
   "banned": [],
   "muted": {},
-  "ai_active": true,
   "groups": {},
-  "support": {}
+  "support_open": {},
+  "admin_reply_to": null,
+  "pending_broadcast": false
 }
