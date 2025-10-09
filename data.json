@@ -1,10 +1,1 @@
-{
-  "ai_on": false,
-  "users": {},
-  "meta": {
-    "free_msgs": 5
-  },
-  "awaiting_contact": {},
-  "awaiting_broadcast": false,
-  "awaiting_reset": false
-}
+echo '{"users": {}, "coins": {}, "banned": [], "muted": {}, "ai_active": true}' > data.json
