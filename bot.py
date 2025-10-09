@@ -9,14 +9,10 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_KEY")
 ADMIN_ID = int(os.getenv("ADMIN_ID") or "0")
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME") or "@NOORI_NOOR"
 BOT_NAME_FARSI = "ربات هوشمند نوری 🤖"
-INSTAGRAM_LINK = os.getenv("INSTAGRAM_LINK") or "https://www.instagram.com/pesar_rostayi"
 
-if not BOT_TOKEN:
-    raise SystemExit("❌ BOT_TOKEN تعریف نشده است.")
-if not ADMIN_ID:
-    raise SystemExit("❌ ADMIN_ID (عددی) تعریف نشده است.")
-if not OPENAI_API_KEY:
-    raise SystemExit("❌ OPENAI_API_KEY تعریف نشده است.")
+if not BOT_TOKEN: raise SystemExit("BOT_TOKEN تعریف نشده است.")
+if not OPENAI_API_KEY: raise SystemExit("OPENAI_API_KEY تعریف نشده است.")
+if not ADMIN_ID: raise SystemExit("ADMIN_ID (عددی) تعریف نشده است.")
 
 # --------- INIT ---------
 bot = TeleBot(BOT_TOKEN, parse_mode="HTML")
@@ -28,71 +24,67 @@ def now_ts(): return int(time.time())
 
 def load_data():
     if not os.path.exists(DATA_FILE):
-        data = {
-            "users": {},
-            "banned": [],
-            "muted": {},
-            "groups": {},
-            "support_open": {},
-            "admin_reply_to": None,
-            "pending_broadcast": False,
-            "ig_pending": {}
+        d = {
+            "users": {}, "banned": [], "muted": {},
+            "groups": {}, "support_open": {},
+            "admin_reply_to": None, "pending_broadcast": False,
+            "instagram_pending": {}
         }
-        save_data(data)
-        return data
+        save_data(d); return d
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         d = json.load(f)
-    d.setdefault("users", {})
-    d.setdefault("banned", [])
-    d.setdefault("muted", {})
-    d.setdefault("groups", {})
-    d.setdefault("support_open", {})
-    d.setdefault("admin_reply_to", None)
-    d.setdefault("pending_broadcast", False)
-    d.setdefault("ig_pending", {})
+    for k in ["users","banned","muted","groups","support_open","pending_broadcast","instagram_pending","admin_reply_to"]:
+        d.setdefault(k, {} if k not in ["banned"] else [])
     return d
 
 def save_data(d):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(d, f, ensure_ascii=False, indent=2)
+    with open(DATA_FILE,"w",encoding="utf-8") as f:
+        json.dump(d,f,ensure_ascii=False,indent=2)
 
 data = load_data()
+def is_admin(uid): return int(uid)==int(ADMIN_ID)
 
-def is_admin(uid): return int(uid) == int(ADMIN_ID)
-
-def ensure_user(uid, name=""):
-    suid = str(uid)
+def ensure_user(uid,name=""):
+    suid=str(uid)
     if suid not in data["users"]:
-        data["users"][suid] = {"coins": DEFAULT_FREE_COINS, "active": True, "name": name or ""}
+        data["users"][suid]={"coins":DEFAULT_FREE_COINS,"active":True,"name":name or ""}
         save_data(data)
 
 # --------- KEYBOARDS ---------
 def kb_user(uid):
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.row(types.KeyboardButton("راهنما 💡"), types.KeyboardButton("شارژ مجدد 🟩"))
-    kb.row(types.KeyboardButton("پشتیبانی ☎️"), types.KeyboardButton("سازنده 👤"))
-    kb.row(types.KeyboardButton("افزودن به گروه ➕"), types.KeyboardButton("دنبال کردم اینستاگرام 📲"))
-    kb.row(types.KeyboardButton("روشن / خاموش 🧠"))
+    kb.row("💡 راهنما", "🟩 شارژ مجدد")
+    kb.row("☎️ پشتیبانی", "👤 سازنده")
+    kb.row("➕ افزودن به گروه", "📱 دنبال کردم اینستاگرام")
+    kb.row("🧠 روشن / خاموش")
     return kb
 
 def kb_admin():
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.row(types.KeyboardButton("آمار کاربران 📊"), types.KeyboardButton("شارژ کاربر 💰"))
-    kb.row(types.KeyboardButton("سکوت کاربر 🤐"), types.KeyboardButton("بن کاربر 🚫"))
-    kb.row(types.KeyboardButton("لیست بن‌ها 🚫"), types.KeyboardButton("لیست سکوت‌ها 🤫"))
-    kb.row(types.KeyboardButton("ارسال همگانی 📣"), types.KeyboardButton("لفت بده ↩️"))
-    kb.row(types.KeyboardButton("بازگشت BACK"))
+    kb.row("📊 آمار کاربران", "💰 شارژ کاربر")
+    kb.row("🤐 سکوت کاربر", "🚫 بن کاربر")
+    kb.row("🚫 لیست بن‌ها", "🤫 لیست سکوت‌ها")
+    kb.row("📣 ارسال همگانی", "↩️ لفت بده")
+    kb.row("بازگشت BACK")
     return kb
 
 def ikb_support(uid):
     ik = types.InlineKeyboardMarkup()
     ik.add(
-        types.InlineKeyboardButton("پاسخ به کاربر ✉️", callback_data=f"reply:{uid}"),
-        types.InlineKeyboardButton("بستن گفتگو ❌", callback_data=f"close:{uid}")
+        types.InlineKeyboardButton("✉️ پاسخ به کاربر", callback_data=f"reply:{uid}"),
+        types.InlineKeyboardButton("❌ بستن گفتگو", callback_data=f"close:{uid}")
     )
     return ik
 
-# --------- START COMMAND ---------
+def ikb_insta_approve(uid):
+    ik = types.InlineKeyboardMarkup()
+    ik.add(
+        types.InlineKeyboardButton("✅ تأیید فالو", callback_data=f"insta_ok:{uid}"),
+        types.InlineKeyboardButton("❌ رد فالو", callback_data=f"insta_no:{uid}")
+    )
+    return ik
+
+# --------- START ---------
 @bot.message_handler(commands=["start"])
 def start_cmd(m):
     uid = m.from_user.id
@@ -101,34 +93,38 @@ def start_cmd(m):
     if is_admin(uid):
         bot.reply_to(m, "👑 سلام رئیس! وارد پنل مدیریتی شدی.", reply_markup=kb_admin())
     else:
-        bot.reply_to(
-            m,
-            f"👋 سلام! به <b>{BOT_NAME_FARSI}</b> خوش اومدی!\n"
-            "اینجا می‌تونی با هوش مصنوعی چت کنی یا عکس بفرستی تا تحلیل کنه.\n"
-            f"هر کاربر {DEFAULT_FREE_COINS} پیام رایگان داره؛ بعدش با «شارژ مجدد 🟩» ادامه بده.\n\n"
-            f"📷 اگه صفحهٔ اینستاگرام ما رو دنبال کردی، دکمهٔ «دنبال کردم اینستاگرام 📲» رو بزن تا ۵ سکهٔ هدیه بگیری 🎁\n"
-            f"🔗 <a href='{INSTAGRAM_LINK}'>صفحهٔ اینستاگرام ما</a>",
-            reply_markup=kb_user(uid)
+        text = (
+            f"سلام 👋 به <b>{BOT_NAME_FARSI}</b> خوش اومدی!\n"
+            "اینجا می‌تونی با هوش مصنوعی حرف بزنی، عکس بفرستی تا تحلیل کنه، "
+            "و از امکانات مدیریتی در گروه‌ها استفاده کنی.\n\n"
+            f"🔹 هر کاربر {DEFAULT_FREE_COINS} پیام رایگان داره.\n"
+            "برای سکه بیشتر، از «📱 دنبال کردم اینستاگرام» استفاده کن!\n\n"
+            "📷 فالو کن و اسکرین بفرست تا بعد از تأیید، ۵ سکه هدیه بگیری 🎁\n\n"
+            f"لینک اینستاگرام 👇\n<a href='https://www.instagram.com/pesar_rostayi'>instagram.com/pesar_rostayi</a>"
         )
-
+        bot.reply_to(m, text, reply_markup=kb_user(uid))# ==========================
 # --------- ADMIN PANEL ---------
+# ==========================
 @bot.message_handler(func=lambda m: m.chat.type == "private" and is_admin(m.from_user.id))
 def admin_private(m):
     txt = (m.text or "").strip()
 
-    # ارسال همگانی
+    # لغو ارسال همگانی
+    if txt == "بازگشت BACK":
+        data["pending_broadcast"] = False
+        save_data(data)
+        bot.reply_to(m, "✅ عملیات لغو شد.", reply_markup=kb_admin())
+        return
+
+    # شروع ارسال همگانی
     if txt == "ارسال همگانی 📣":
         data["pending_broadcast"] = True
         save_data(data)
-        bot.reply_to(m, "✍️ پیام خود را بفرست تا برای همه کاربران و گروه‌ها ارسال شود. (برای لغو: BACK)")
+        bot.reply_to(m, "✍️ پیام خود را ارسال کنید؛ برای لغو، «بازگشت BACK» را بفرستید.")
         return
 
+    # ارسال همگانی در حال انجام
     if data.get("pending_broadcast"):
-        if txt == "بازگشت BACK":
-            data["pending_broadcast"] = False
-            save_data(data)
-            bot.reply_to(m, "ارسال همگانی لغو شد.")
-            return
         ok, fail = 0, 0
         for suid in list(data["users"].keys()):
             try:
@@ -136,218 +132,192 @@ def admin_private(m):
                 ok += 1
             except:
                 fail += 1
-        for sgid in list(data["groups"].keys()):
-            try:
-                bot.copy_message(int(sgid), m.chat.id, m.message_id)
-                ok += 1
-            except:
-                fail += 1
         data["pending_broadcast"] = False
         save_data(data)
-        bot.reply_to(m, f"📣 ارسال شد ✅ موفق: {ok} | ❌ ناموفق: {fail}")
+        bot.reply_to(m, f"📢 پیام به همه ارسال شد.\nموفق: {ok} | ناموفق: {fail}")
         return
 
-    # آمار
+    # آمار کاربران
     if txt == "آمار کاربران 📊":
         total = len(data["users"])
         total_ban = len(data["banned"])
-        total_mute = len([1 for k, v in data["muted"].items() if v > now_ts()])
+        total_mute = len([1 for _, v in data["muted"].items() if v > now_ts()])
         bot.reply_to(m, f"📈 کاربران: {total}\n🚫 بن‌شده: {total_ban}\n🤐 در سکوت: {total_mute}")
         return
 
-    # برگشت راهنما
-    if txt == "بازگشت BACK":
-        bot.reply_to(m,
-                     "دستورات سودو:\n"
-                     "• شارژ [uid] [تعداد]\n"
-                     "• بن [uid] | حذف بن [uid]\n"
-                     "• سکوت [uid] [ساعت] | حذف سکوت [uid]\n"
-                     "• شارژ گروه [روز] | لفت بده\n"
-                     "• لیست بن‌ها | لیست سکوت‌ها",
-                     reply_markup=kb_admin())
-        return# --------- USER COMMANDS ---------
+    # دستورات تایپی ادمین
+    parts = txt.split()
+    if len(parts) == 0:
+        return
+
+    try:
+        if parts[0] == "شارژ" and len(parts) == 3:
+            uid = int(parts[1]); amount = int(parts[2])
+            ensure_user(uid)
+            data["users"][str(uid)]["coins"] += amount
+            save_data(data)
+            bot.reply_to(m, f"✅ {amount} سکه به کاربر {uid} اضافه شد.")
+            bot.send_message(uid, f"💰 سکه‌های شما {amount} عدد شارژ شد.")
+            return
+
+        if parts[0] == "بن" and len(parts) == 2:
+            uid = str(parts[1])
+            if uid not in data["banned"]:
+                data["banned"].append(uid)
+                save_data(data)
+            bot.reply_to(m, f"🚫 کاربر {uid} بن شد.")
+            return
+
+        if parts[0] == "حذف" and len(parts) == 3 and parts[1] == "بن":
+            uid = str(parts[2])
+            if uid in data["banned"]:
+                data["banned"].remove(uid)
+                save_data(data)
+            bot.reply_to(m, f"✅ بن کاربر {uid} برداشته شد.")
+            return
+
+        if parts[0] == "سکوت" and len(parts) == 3:
+            uid = str(parts[1]); hours = float(parts[2])
+            expire = now_ts() + int(hours * 3600)
+            data["muted"][uid] = expire
+            save_data(data)
+            bot.reply_to(m, f"🤐 کاربر {uid} به مدت {hours} ساعت در سکوت است.")
+            return
+
+        if parts[0] == "حذف" and len(parts) == 3 and parts[1] == "سکوت":
+            uid = str(parts[2])
+            data["muted"].pop(uid, None)
+            save_data(data)
+            bot.reply_to(m, f"✅ سکوت کاربر {uid} برداشته شد.")
+            return
+
+        if parts[0] == "لفت" and parts[1] == "بده":
+            bot.leave_chat(m.chat.id)
+            return
+    except Exception as e:
+        bot.reply_to(m, f"⚠️ خطا: {e}")
+
+# ==========================
+# --------- USER PANEL ---------
+# ==========================
 @bot.message_handler(func=lambda m: m.chat.type == "private" and not is_admin(m.from_user.id))
 def user_private(m):
     uid = m.from_user.id
-    ensure_user(uid)
+    ensure_user(uid, f"{m.from_user.first_name or ''} {m.from_user.last_name or ''}".strip())
+    cu = data["users"][str(uid)]
     txt = (m.text or "").strip()
-    suid = str(uid)
 
-    # راهنما
+    # جلوگیری از بن یا سکوت
+    if str(uid) in data["banned"]:
+        return
+    if str(uid) in data["muted"] and data["muted"][str(uid)] > now_ts():
+        return
+
+    # دستورات معمولی
     if txt == "راهنما 💡":
-        bot.reply_to(m,
-                     "📘 راهنما:\n"
-                     "1️⃣ برای چت، پیام یا سوال خود را بنویسید.\n"
-                     "2️⃣ برای ارسال عکس جهت تحلیل، فقط عکس را بفرستید.\n"
-                     "3️⃣ برای ارتباط با پشتیبانی، روی ☎️ پشتیبانی بزنید.\n"
-                     "4️⃣ با دنبال کردن اینستاگرام، ۵ سکه هدیه بگیرید 🎁.",
-                     reply_markup=kb_user(uid))
+        bot.reply_to(m, "📘 راهنما:\nبا ارسال متن، پاسخ هوش مصنوعی را بگیر.\nبا ارسال عکس، تحلیل تصویر دریافت کن.\nاگر سکه تمام شد، از پشتیبانی بخواه شارژت کند.")
         return
 
-    # لینک سازنده
     if txt == "سازنده 👤":
-        bot.reply_to(m, f"👑 سازنده: {ADMIN_USERNAME}\n💬 هر پیشنهاد یا باگ را اطلاع دهید.")
+        bot.reply_to(m, f"👤 سازنده: {ADMIN_USERNAME}")
         return
 
-    # افزودن به گروه
     if txt == "افزودن به گروه ➕":
-        bot.reply_to(m,
-                     f"برای افزودن من به گروه، لینک زیر را بزن:\n\n"
-                     f"https://t.me/{bot.get_me().username}?startgroup=new\n\n"
-                     "بعد از افزودن، ادمین گروه باید دستور «شارژ گروه [روز]» را بزند.")
+        bot.reply_to(m, "من را به گروه اضافه کنید و به من دسترسی پیام بدهید، سپس مدیر می‌تواند بنویسد: «شارژ گروه [روز]».")
         return
 
-    # دکمه دنبال کردم اینستاگرام 📲
-    if txt == "دنبال کردم اینستاگرام 📲":
-        data["ig_pending"][suid] = True
+    if txt == "شارژ مجدد 🟩":
+        bot.reply_to(m, "برای شارژ، به پشتیبانی پیام بده یا از لینک اینستاگرام استفاده کن:\n📸 [Instagram](https://www.instagram.com/pesar_rostayi)")
+        return
+
+    if txt == "پشتیبانی ☎️":
+        data["support_open"][str(uid)] = True
         save_data(data)
-        bot.reply_to(m,
-                     "📸 لطفاً از صفحهٔ فالو گرفته‌شده (که نشون بده فالو کردی) اسکرین بفرست.\n"
-                     "ادمین بررسی می‌کنه و بعد از تأیید، ۵ سکه بهت هدیه داده میشه 🎁.")
+        bot.reply_to(m, "📩 پشتیبانی فعال شد. هر پیامی بفرست به مدیر می‌رسد.\nبرای خروج بنویس: پایان پشتیبانی")
+        bot.send_message(ADMIN_ID, f"📥 پیام جدید از کاربر {uid}")
         return
 
-    # سکوت، شارژ، یا خطا
-    if suid in data["banned"]:
-        bot.reply_to(m, "🚫 شما بن شدید. دسترسی شما مسدود است.")
-        return
-    if suid in data["muted"] and data["muted"][suid] > now_ts():
-        left = (data["muted"][suid] - now_ts()) // 60
-        bot.reply_to(m, f"🤫 شما در حالت سکوت هستید ({left} دقیقه باقی‌مانده).")
+    if txt == "پایان پشتیبانی":
+        data["support_open"][str(uid)] = False
+        save_data(data)
+        bot.reply_to(m, "✅ پشتیبانی بسته شد.")
         return
 
-    # اگر در پشتیبانی هست
-    if suid in data["support_open"]:
-        bot.forward_message(ADMIN_ID, m.chat.id, m.message_id)
-        bot.reply_to(m, "📩 پیام شما برای پشتیبانی ارسال شد.")
-        return
-
-    # روشن / خاموش هوش
     if txt == "روشن / خاموش 🧠":
-        u = data["users"][suid]
-        u["active"] = not u.get("active", True)
+        cu["active"] = not cu.get("active", True)
         save_data(data)
-        bot.reply_to(m, "✅ هوش فعال شد." if u["active"] else "⛔ هوش غیرفعال شد.")
+        bot.reply_to(m, f"🧠 حالت گفتگو {'فعال' if cu['active'] else 'غیرفعال'} شد.")
         return
 
-    # اگر کاربر سکه ندارد
-    coins = data["users"][suid]["coins"]
-    if coins <= 0:
-        bot.reply_to(m, "❌ موجودی شما تمام شده.\nبا «شارژ مجدد 🟩» ادامه دهید.")
+    # پاسخ هوش مصنوعی (متن)
+    if cu.get("coins", 0) <= 0:
+        bot.reply_to(m, "💸 موجودی سکه شما تمام شده.")
         return
 
-    # تشخیص ادامه تحلیل
-    if txt.startswith("ادامه تحلیل"):
-        prev_msg = txt.replace("ادامه تحلیل", "").strip()
-        prompt = f"تحلیل را ادامه بده و توضیح تکمیلی ارائه کن برای:\n{prev_msg}"
-    else:
-        prompt = txt
+    if cu.get("active", True) and txt:
+        try:
+            # اگر کاربر گفت "ادامه تحلیل" → از حافظه آخرین پاسخ استفاده کن
+            if txt.startswith("ادامه تحلیل"):
+                last = cu.get("last_prompt", "")
+                if not last:
+                    bot.reply_to(m, "🔹 هنوز تحلیلی برای ادامه وجود ندارد.")
+                    return
+                ask_text = f"{last}\n\n{txt.replace('ادامه تحلیل', '').strip()}"
+            else:
+                ask_text = txt
+                cu["last_prompt"] = ask_text
 
-    # درخواست به GPT با پشتیبانی از متن
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "شما یک دستیار فارسی حرفه‌ای هستید."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        answer = response.choices[0].message.content
-        bot.reply_to(m, answer)
-        data["users"][suid]["coins"] -= 1
-        save_data(data)
-    except Exception as e:
-        bot.reply_to(m, f"⚠️ خطا در پاسخ: {e}")
+            resp = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a helpful AI that answers in Persian."},
+                    {"role": "user", "content": ask_text}
+                ]
+            )
+            answer = resp.choices[0].message.content
+            bot.reply_to(m, f"🤖 {answer}")
+            cu["coins"] -= 1
+            save_data(data)
+        except Exception as e:
+            bot.reply_to(m, f"❌ خطا در پاسخ هوش مصنوعی:\n{e}")
+        return
 
-# --------- عکس ---------
+# ==========================
+# --------- PHOTO AI ---------
+# ==========================
 @bot.message_handler(content_types=["photo"])
-def photo_analyze(m):
+def handle_photo(m):
     uid = m.from_user.id
     ensure_user(uid)
-    suid = str(uid)
+    cu = data["users"][str(uid)]
 
-    # اگر سکه ندارد
-    if data["users"][suid]["coins"] <= 0:
-        bot.reply_to(m, "❌ موجودی شما تمام شده.\nبا «شارژ مجدد 🟩» ادامه دهید.")
-        return
-
-    # اگر در انتظار تأیید اینستا است
-    if suid in data["ig_pending"] and data["ig_pending"][suid]:
-        bot.send_message(ADMIN_ID, f"📥 عکس اثبات فالو از {m.from_user.first_name} دریافت شد.", reply_to_message_id=None)
-        bot.forward_message(ADMIN_ID, m.chat.id, m.message_id)
-        bot.send_message(ADMIN_ID, f"تأیید می‌کنی فالو کرده؟ /approve_{uid} یا /reject_{uid}")
-        bot.reply_to(m, "📤 تصویر ارسال شد. ادمین بررسی می‌کنه و نتیجه اعلام میشه.")
-        return
-
-    # تحلیل تصویر با GPT-4o
-    file_info = bot.get_file(m.photo[-1].file_id)
-    file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}"
+    if cu.get("coins", 0) <= 0:
+        return bot.reply_to(m, "💸 موجودی سکه تمام شده.")
 
     try:
-        res = client.chat.completions.create(
+        file_info = bot.get_file(m.photo[-1].file_id)
+        file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}"
+
+        resp = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "تصویر را تحلیل کن و توضیح فارسی ارائه بده."},
-                {"role": "user", "content": [{"type": "image_url", "image_url": {"url": file_url}}]}
+                {"role": "user",
+                 "content": [
+                     {"type": "text", "text": "این تصویر را به فارسی تحلیل و توصیف کن."},
+                     {"type": "image_url", "image_url": {"url": file_url}}
+                 ]}
             ]
         )
-        answer = res.choices[0].message.content
-        bot.reply_to(m, f"🖼 تحلیل تصویر:\n{answer}")
-        data["users"][suid]["coins"] -= 1
+        answer = resp.choices[0].message.content
+        bot.reply_to(m, f"🖼️ تحلیل تصویر:\n{answer}")
+        cu["coins"] -= 1
         save_data(data)
     except Exception as e:
-        bot.reply_to(m, f"❌ خطا در تحلیل تصویر: {e}")
+        bot.reply_to(m, f"❌ خطا در تحلیل تصویر:\n{e}")
 
-# --------- تأیید یا رد فالو اینستا ---------
-@bot.message_handler(commands=["approve", "reject"])
-def approve_reject_instagram(m):
-    if not is_admin(m.from_user.id):
-        return
-    try:
-        cmd, uid = m.text.split("_")
-        uid = int(uid)
-    except:
-        bot.reply_to(m, "فرمت اشتباه است. مثال: /approve_12345")
-        return
-
-    suid = str(uid)
-    if suid not in data["ig_pending"]:
-        bot.reply_to(m, "درخواستی از این کاربر وجود ندارد.")
-        return
-
-    if cmd.startswith("/approve"):
-        data["users"][suid]["coins"] += 5
-        bot.send_message(uid, "✅ فالو تأیید شد! ۵ سکه به حسابت اضافه شد 🎁.")
-        bot.reply_to(m, f"تأیید شد ✅ برای {uid}")
-    else:
-        bot.send_message(uid, "❌ فالو تأیید نشد. لطفاً عکس واضح‌تر بفرست.")
-        bot.reply_to(m, f"رد شد ❌ برای {uid}")
-
-    del data["ig_pending"][suid]
-    save_data(data)
-
-# --------- پشتیبانی ---------
-@bot.message_handler(func=lambda m: m.text == "پشتیبانی ☎️")
-def support_request(m):
-    uid = m.from_user.id
-    suid = str(uid)
-    ensure_user(uid)
-    if suid in data["support_open"]:
-        del data["support_open"][suid]
-        bot.reply_to(m, "📪 پشتیبانی بسته شد.", reply_markup=kb_user(uid))
-    else:
-        data["support_open"][suid] = True
-        bot.reply_to(m, "📨 پیام خود را بنویسید. برای بستن، دوباره روی ☎️ پشتیبانی بزنید.")
-    save_data(data)
-
-# --------- گروه ---------
-@bot.my_chat_member_handler()
-def added_to_group(update):
-    chat = update.chat
-    if update.new_chat_member.status == "member":
-        data["groups"][str(chat.id)] = {"title": chat.title, "join_time": now_ts()}
-        save_data(data)
-        bot.send_message(ADMIN_ID, f"📢 ربات به گروه جدیدی اضافه شد:\n📛 {chat.title}\n🆔 {chat.id}")
-
-# --------- RUN ---------
-print("🤖 Bot is running with GPT-4o-mini ...")
-bot.infinity_polling(skip_pending=True)
+# ==========================
+# --------- RUN BOT ---------
+# ==========================
+if __name__ == "__main__":
+    print("🤖 Bot is running...")
+    bot.infinity_polling(skip_pending=True, timeout=30)
