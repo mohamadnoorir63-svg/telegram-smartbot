@@ -1,40 +1,43 @@
 import os
 from pyrogram import Client, filters
 
-# اطلاعات از Config Vars هروکو گرفته می‌شن
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 SESSION_STRING = os.getenv("SESSION_STRING")
 
-# ساخت یوزربات
-app = Client(name="userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
+app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 
-# دستور "بیا"
-@app.on_message(filters.me & filters.regex(r"^بیا"))
-async def join_group(client, message):
-    try:
-        text = message.text.split(" ", 1)
-        if len(text) == 1:
-            await message.reply_text("❗ لطفاً لینک یا یوزرنیم گروه رو هم بنویس.\nمثال:\nبیا https://t.me/examplegroup")
-            return
+# ذخیره وضعیت منتظر لینک بودن
+waiting_for_link = {}
 
-        link = text[1].strip()
-        if link.startswith("https://t.me/"):
-            link = link.replace("https://t.me/", "").replace("@", "")
+@app.on_message(filters.me & filters.text & filters.regex(r"^بیا$"))
+async def ask_for_link(client, message):
+    """وقتی گفتی بیا، ازت لینک می‌خواد"""
+    waiting_for_link[message.chat.id] = True
+    await message.reply_text("📎 لینک گروه رو بفرست تا واردش بشم!")
 
-        await client.join_chat(link)
-        await message.reply_text(f"✅ با موفقیت وارد گروه {link} شدم!")
-    except Exception as e:
-        await message.reply_text(f"❌ نتونستم بیام:\n`{e}`")
+@app.on_message(filters.me & filters.text)
+async def join_when_link_sent(client, message):
+    """وقتی لینک فرستادی، بره تو گروه"""
+    if waiting_for_link.get(message.chat.id):
+        text = message.text.strip()
+        if text.startswith("https://t.me/") or text.startswith("@"):
+            try:
+                link = text.replace("https://t.me/", "").replace("@", "")
+                await client.join_chat(link)
+                await message.reply_text(f"✅ با موفقیت وارد گروه [{link}](https://t.me/{link}) شدم!")
+            except Exception as e:
+                await message.reply_text(f"❌ نتونستم وارد شم:\n`{e}`")
+            waiting_for_link[message.chat.id] = False
+        else:
+            await message.reply_text("❗ لطفاً لینک معتبر بفرست (مثلاً https://t.me/examplegroup)")
 
-# دستور "برو بیرون"
-@app.on_message(filters.me & filters.regex(r"^برو بیرون"))
+@app.on_message(filters.me & filters.regex(r"^برو بیرون$"))
 async def leave_group(client, message):
     try:
         await client.leave_chat(message.chat.id)
     except Exception as e:
         await message.reply_text(f"خطا هنگام خروج: {e}")
 
-# شروع برنامه
-print("✅ Userbot started successfully!")
+print("✅ Userbot started and waiting for your commands...")
 app.run()
