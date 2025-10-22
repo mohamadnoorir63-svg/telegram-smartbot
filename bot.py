@@ -9,7 +9,8 @@ API_HASH = os.getenv("API_HASH")
 
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH)
 
-async def download_music(query):
+def download_music(query):
+    """این تابع دانلود را در ترد جداگانه انجام می‌دهد"""
     if not os.path.exists("downloads"):
         os.mkdir("downloads")
 
@@ -29,12 +30,11 @@ async def download_music(query):
     return file_path, info
 
 
-# 🟢 اینجا فقط filters.text استفاده شده (بدون edited)
 @app.on_message(filters.text)
 async def detect_music_request(client, message):
     text = message.text.lower().strip()
 
-    # اگر پیام با یکی از کلیدواژه‌ها شروع شد
+    # تشخیص کلمه کلیدی
     if text.startswith("آهنگ ") or text.startswith("music ") or text.startswith("musik "):
         query = re.sub(r"^(آهنگ|music|musik)\s+", "", text).strip()
         if not query:
@@ -44,6 +44,7 @@ async def detect_music_request(client, message):
         m = await message.reply_text(f"🎶 در حال جستجو برای: `{query}` ...")
 
         try:
+            # اجرای دانلود در ترد جداگانه
             file_path, info = await asyncio.to_thread(download_music, query)
             title = info.get("title", "Unknown Title")
             artist = info.get("uploader", "Unknown Artist")
