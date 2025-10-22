@@ -1,6 +1,8 @@
+
 import os
 from pyrogram import Client, filters
 import re
+import random
 
 # ---------- تنظیمات ----------
 API_ID = int(os.getenv("API_ID"))
@@ -8,8 +10,18 @@ API_HASH = os.getenv("API_HASH")
 SESSION_STRING = os.getenv("SESSION_STRING")
 SUDO_USERS = [7089376754]  # آی‌دی عددی خودت
 
+# ---------- یوزربات ----------
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 waiting_for_links = {}
+
+# ---------- پاسخ‌های خودکار ----------
+auto_replies = [
+    "سلام 👋",
+    "سلام، خوبی؟ 😊",
+    "درود! 🌹",
+    "هستم 😎",
+    "سلام! آنلاینم ✅"
+]
 
 # ---------- فیلتر سودو ----------
 def is_sudo(_, __, message):
@@ -17,20 +29,18 @@ def is_sudo(_, __, message):
 
 sudo_filter = filters.create(is_sudo)
 
-# ---------- اعلام آنلاین شدن ----------
+# ---------- وقتی روشن میشه ----------
 @app.on_message(filters.me & filters.regex("^/start$"))
 async def start_me(client, message):
     await message.reply_text("✅ یوزربات روشن و آنلاین است!")
 
-# ---------- دستور "بیا" ----------
+# ---------- دستور بیا ----------
 @app.on_message(sudo_filter & filters.text & filters.regex(r"^بیا$"))
 async def ask_for_links(client, message):
     waiting_for_links[message.chat.id] = []
-    await message.reply_text(
-        "📎 لینک‌ها رو بفرست (هر خط یک لینک)\nوقتی تموم شد بنویس: **پایان**"
-    )
+    await message.reply_text("📎 لینک‌ها رو بفرست (هر خط یک لینک)\nوقتی تموم شد بنویس: **پایان**")
 
-# ---------- هندل پیام‌های حاوی لینک (حتی بدون «بیا») ----------
+# ---------- پردازش پیام‌های سودو و لینک‌ها ----------
 @app.on_message(sudo_filter & filters.text)
 async def handle_links(client, message):
     text = message.text.strip()
@@ -46,19 +56,36 @@ async def handle_links(client, message):
             else:
                 await message.reply_text("⚠️ هیچ لینکی دریافت نشد.")
             return
-        # افزودن لینک‌ها
+
         links = extract_links(text)
         waiting_for_links[chat_id].extend(links)
         await message.reply_text(f"✅ {len(links)} لینک جدید اضافه شد.")
         return
 
-    # حالت خودکار — هر وقت لینکی دید
+    # حالت خودکار — هر پیام شامل لینک
     links = extract_links(text)
     if links:
         await message.reply_text(f"🔗 {len(links)} لینک شناسایی شد — دارم جوین می‌شم...")
         await join_links(client, message, links)
 
-# ---------- استخراج لینک از متن ----------
+# ---------- پاسخ خودکار به هر پیام (از هرکسی) ----------
+@app.on_message(filters.text & ~filters.me)
+async def auto_reply(client, message):
+    # اگر لینک داشت، خودش در بخش بالا هندل میشه — اینجا فقط چت معمولی
+    if not extract_links(message.text):
+        reply = random.choice(auto_replies)
+        await message.reply_text(reply)
+
+# ---------- خروج ----------
+@app.on_message(sudo_filter & filters.regex(r"^برو بیرون$"))
+async def leave_group(client, message):
+    try:
+        await client.leave_chat(message.chat.id)
+        await message.reply_text("🚪 از گروه خارج شدم.")
+    except Exception as e:
+        await message.reply_text(f"⚠️ خطا هنگام خروج: {e}")
+
+# ---------- استخراج لینک ----------
 def extract_links(text: str):
     pattern = r"(https?://t\.me/[^\s]+|@[\w\d_]+)"
     return re.findall(pattern, text)
@@ -92,15 +119,6 @@ async def join_links(client, message, links):
 
     summary = f"📋 نتیجه:\n" + "\n".join(results[-30:])
     await message.reply_text(f"{summary}\n\n✅ موفق: {joined} | ❌ خطا: {failed}")
-
-# ---------- خروج ----------
-@app.on_message(sudo_filter & filters.regex(r"^برو بیرون$"))
-async def leave_group(client, message):
-    try:
-        await client.leave_chat(message.chat.id)
-        await message.reply_text("🚪 از گروه خارج شدم.")
-    except Exception as e:
-        await message.reply_text(f"⚠️ خطا هنگام خروج: {e}")
 
 # ---------- شروع ----------
 print("✅ Userbot started successfully and is online.")
