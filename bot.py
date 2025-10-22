@@ -4,7 +4,8 @@ import os
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 
-app = Client("userbot.session", api_id=API_ID, api_hash=API_HASH)
+# فقط نام سشن بدون پسوند .session
+app = Client("userbot", api_id=API_ID, api_hash=API_HASH)
 
 @app.on_message(filters.command("ping"))
 def ping(_, msg):
