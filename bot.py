@@ -1,104 +1,88 @@
 from pyrogram import Client, filters
-import os
+from pytgcalls import PyTgCalls, idle
+from pytgcalls.types import AudioPiped
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import yt_dlp
 import asyncio
+import os
 
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 
-# اگر فایل سشن‌ت اسمش userbot.session هست، همین "userbot" درسته
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH)
+call = PyTgCalls(app)
 
+# تابع دانلود آهنگ
+async def download_audio(query):
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "outtmpl": "downloads/%(title)s.%(ext)s",
+        "quiet": True,
+        "noplaylist": True,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(f"ytsearch1:{query}", download=True)["entries"][0]
+        filename = ydl.prepare_filename(info)
+    return filename, info["title"]
 
-@app.on_message(filters.text)  # قبول همهٔ پیام‌های متنی
-async def music_downloader(client, message):
-    text = (message.text or "").strip()
-
-    # 1) حالت با اسلش: /music ...
-    if text.startswith("/music") or text.startswith("!music"):  # هم /music و هم !music
-        parts = text.split(maxsplit=1)
-        if len(parts) < 2:
-            await message.reply_text("❌ لطفاً نام آهنگ یا لینک رو بنویس:\nمثلاً: /music Arash Broken Angel")
-            return
-        query = parts[1].strip()
-
-    # 2) حالت بدون اسلش: شروع با "آهنگ " (فارسی)
-    elif text.lower().startswith("آهنگ "):
-        query = text[len("آهنگ "):].strip()
+@app.on_message(filters.text & filters.group)
+async def play_music(client, message):
+    text = message.text.lower().strip()
+    if text.startswith(("آهنگ ", "music ", "musik ", "/music")):
+        query = text.split(" ", 1)[1] if " " in text else None
         if not query:
-            await message.reply_text("🎧 لطفاً بعد از 'آهنگ' اسم آهنگ رو بنویس.")
+            await message.reply("❌ لطفاً بعد از دستور نام آهنگ رو بنویس.")
             return
 
-    # 3) حالت بدون اسلش: شروع با "music " (انگلیسی، case-insensitive)
-    elif text.lower().startswith("music "):
-        query = text[len("music "):].strip()
-        if not query:
-            await message.reply_text("🎧 لطفاً بعد از 'music' اسم آهنگ رو بنویس.")
-            return
+        m = await message.reply("🎧 در حال جستجوی آهنگ...")
 
-    # 4) حالت بدون اسلش: شروع با "musik " (case-insensitive)
-    elif text.lower().startswith("musik "):
-        query = text[len("musik "):].strip()
-        if not query:
-            await message.reply_text("🎧 لطفاً بعد از 'musik' اسم آهنگ رو بنویس.")
-            return
-
-    else:
-        # اگه هیچ کدوم نبود، خروج (هیچ تغییری در بقیهٔ پیام‌ها ایجاد نشه)
-        return
-
-    # از اینجا بقیهٔ منطق عیناً اجرا میشه
-    m = await message.reply_text(f"🎧 در حال جستجو برای آهنگ {query}...")
-
-    if not os.path.exists("downloads"):
-        os.mkdir("downloads")
-
-    # تابع کمکی برای دانلود از یک منبع خاص (بدون async تا مشکلی با to_thread نباشه)
-    def try_download(source: str):
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "outtmpl": "downloads/%(title)s.%(ext)s",
-            "quiet": True,
-            "noplaylist": True,
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            if "http" in query:
-                info = ydl.extract_info(query, download=True)
-            else:
-                info = ydl.extract_info(f"ytsearch1:{query}", download=True)['entries'][0]
-            return ydl.prepare_filename(info), info
-
-    try:
         try:
-            # اجرای دانلود در ترد جداگانه
-            file_path, info = await asyncio.to_thread(try_download, "youtube")
-        except Exception:
-            await m.edit_text("⚠️ یوتیوب اجازه نداد، دارم از SoundCloud امتحان می‌کنم...")
-            ydl_opts = {
-                "format": "bestaudio/best",
-                "outtmpl": "downloads/%(title)s.%(ext)s",
-                "quiet": True,
-                "noplaylist": True,
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(f"scsearch1:{query}", download=True)['entries'][0]
-                file_path = ydl.prepare_filename(info)
+            file_path, title = await asyncio.to_thread(download_audio, query)
+            await call.join_group_call(message.chat.id, AudioPiped(file_path))
+            await m.delete()
 
-        title = info.get("title", "Unknown Title")
-        artist = info.get("uploader", "Unknown Artist")
+            buttons = InlineKeyboardMarkup([
+                [InlineKeyboardButton("⏸ توقف", callback_data="pause"),
+                 InlineKeyboardButton("▶️ پخش", callback_data="resume")],
+                [InlineKeyboardButton("🔇 بی‌صدا", callback_data="mute"),
+                 InlineKeyboardButton("🔊 صدا", callback_data="unmute")],
+                [InlineKeyboardButton("❌ خروج", callback_data="leave")]
+            ])
 
-        await m.edit_text(f"📤 در حال ارسال آهنگ {title} ...")
-        await message.reply_audio(
-            audio=file_path,
-            title=title,
-            performer=artist,
-            caption=f"🎶 {title}\n👤 {artist}\n\nدانلود شده توسط 🎧 *خنگول موزیک بات*",
-        )
-        os.remove(file_path)
-        await m.delete()
+            await message.reply_audio(
+                audio=file_path,
+                caption=f"🎶 در حال پخش: **{title}**",
+                reply_markup=buttons
+            )
 
-    except Exception as e:
-        await m.edit_text(f"❌ خطا در دریافت آهنگ:\n{e}")
+        except Exception as e:
+            await m.edit(f"❌ خطا در پخش آهنگ:\n`{e}`")
 
-print("🎧 Music Bot Online...")
-app.run()
+# کنترل دکمه‌ها
+@app.on_callback_query()
+async def callbacks(client, callback_query):
+    chat_id = callback_query.message.chat.id
+    data = callback_query.data
+
+    if data == "pause":
+        await call.pause_stream(chat_id)
+        await callback_query.answer("⏸ پخش متوقف شد.")
+    elif data == "resume":
+        await call.resume_stream(chat_id)
+        await callback_query.answer("▶️ پخش ادامه یافت.")
+    elif data == "mute":
+        await call.mute_stream(chat_id)
+        await callback_query.answer("🔇 بی‌صدا شد.")
+    elif data == "unmute":
+        await call.unmute_stream(chat_id)
+        await callback_query.answer("🔊 صدا فعال شد.")
+    elif data == "leave":
+        await call.leave_group_call(chat_id)
+        await callback_query.answer("❌ از ویس خارج شد.")
+    else:
+        await callback_query.answer("❓ دستور نامشخص.")
+
+print("🎵 Voice Chat Music Bot Online...")
+app.start()
+call.start()
+idle()
