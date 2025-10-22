@@ -1,66 +1,114 @@
 import os
 import asyncio
 from pyrogram import Client, filters
+from pyrogram.types import Message
 
 # ---------- تنظیمات ----------
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
-SESSION_STRING = os.getenv("SESSION_STRING")  # باید در Config Vars باشه
-SUDO_USERS = [int(x) for x in os.getenv("SUDO_USERS", "7089376754").split()]
-LINKS_FILE = "links.txt"
-CHECK_INTERVAL = 5  # هر چند دقیقه فایل links.txt چک بشه
+SESSION_STRING = os.getenv("SESSION_STRING")
+# اجازه می‌ده از ENV هم بخونی هم هاردکد داشته باشی
+SUDO_ENV = os.getenv("SUDO_USERS", "").strip()
+SUDO_USERS = {7089376754}  # آی‌دی خودت (می‌تونی حذف کنی)
+if SUDO_ENV:
+    for x in SUDO_ENV.replace(",", " ").split():
+        if x.isdigit():
+            SUDO_USERS.add(int(x))
 
-# ---------- ساخت یوزربات ----------
+LINKS_FILE = "links.txt"
+CHECK_INTERVAL = 5  # دقیقه
+
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 
 joined_links = set()
-waiting_for_links = {}
+waiting_for_links = {}  # chat_id -> bool
 
-sudo_filter = filters.user(SUDO_USERS)
+def norm(s: str) -> str:
+    # حذف نیم‌فاصله و کاراکترهای نامرئی و یکسان‌سازی ی/ک
+    if not s:
+        return ""
+    s = s.replace("\u200c", "").replace("\u200f", "").replace("\u2067", "").strip()
+    s = s.replace("ي", "ی").replace("ك", "ک")
+    return s
 
-# ---------- وقتی استارت شد پیام بده ----------
-async def send_online_message():
-    try:
-        for sudo in SUDO_USERS:
-            await app.send_message(sudo, "✅ یوزربات روشن و آنلاین است!")
-    except Exception as e:
-        print("⚠️ خطا در ارسال پیام آنلاین:", e)
+def is_sudo(msg: Message) -> bool:
+    return msg.from_user and msg.from_user.id in SUDO_USERS
+
+# ---------- وقتی بالا آمد، به سودو خبر بده ----------
+@app.on_message(filters.me & filters.private)
+async def _noop_me(_, __):  # برای جلوگیری از هشدار Pyrogram
+    pass
+
+async def notify_online():
+    # به هر سودویی که توانستیم، پیام بدهیم
+    for uid in list(SUDO_USERS):
+        try:
+            await app.send_message(uid, "✅ یوزربات روشن و آنلاین است!")
+        except Exception as e:
+            print(f"[notify] couldn't pm {uid}: {e}")
 
 # ---------- دستور: بیا ----------
-@app.on_message(sudo_filter & filters.text & filters.regex(r"^بیا$"))
-async def ask_for_links(client, message):
-    waiting_for_links[message.chat.id] = True
-    await message.reply_text(
-        "📎 لینک‌ها رو بفرست (هر کدوم در یک خط) یا فایل txt بفرست.\n"
-        "وقتی تموم شد بنویس: **پایان**"
-    )
+@app.on_message(filters.text)
+async def dispatcher(client, message: Message):
+    if not is_sudo(message):
+        # برای عیب‌یابی: چاپ کن که پیام آمد ولی از سودو نبود
+        print(f"[ignored] from {message.from_user.id if message.from_user else 'unknown'}: {message.text!r}")
+        return
 
-# ---------- گرفتن لینک‌ها به صورت متنی ----------
-@app.on_message(sudo_filter & filters.text)
-async def handle_links(client, message):
+    text_raw = message.text or ""
+    text = norm(text_raw)
     chat_id = message.chat.id
-    if not waiting_for_links.get(chat_id):
+
+    # تشخیص دستور "بیا"
+    if text in {"بیا", "بيا", "BIA", "Bia", "bia"}:
+        waiting_for_links[chat_id] = True
+        print(f"[state] waiting_for_links[{chat_id}] = True")
+        await message.reply_text(
+            "📎 لینک‌ها رو بفرست (هر خط یک لینک) یا فایل txt بده.\n"
+            "وقتی تموم شد بنویس: **پایان**"
+        )
         return
 
-    text = message.text.strip()
-    if text == "پایان":
-        waiting_for_links[chat_id] = False
-        await message.reply_text("✅ دریافت لینک‌ها تموم شد — دارم پردازش می‌کنم...")
+    # خروج از گروه
+    if text in {"برو بیرون", "خروج"}:
+        try:
+            await client.leave_chat(chat_id)
+            await message.reply_text("🚪 از گروه خارج شدم.")
+        except Exception as e:
+            await message.reply_text(f"⚠️ خطا هنگام خروج: {e}")
         return
 
-    links = [line.strip() for line in text.splitlines() if line.strip()]
-    await join_multiple(client, message, links)
+    # وضعیت
+    if text in {"وضعیت", "status", "ping"}:
+        await message.reply_text(f"🟢 فعال!\nتعداد لینک‌های جوین‌شده: {len(joined_links)}")
+        return
 
-# ---------- گرفتن لینک‌ها از فایل txt ----------
-@app.on_message(sudo_filter & filters.document)
-async def handle_file(client, message):
+    # اگر در حالت دریافت لینک هستیم
+    if waiting_for_links.get(chat_id):
+        if text == "پایان":
+            waiting_for_links[chat_id] = False
+            print(f"[state] waiting_for_links[{chat_id}] = False")
+            await message.reply_text("✅ دریافت لینک‌ها تموم شد — دارم پردازش می‌کنم...")
+            return
+
+        links = [norm(line) for line in text_raw.splitlines() if norm(line)]
+        if links:
+            print(f"[links] got {len(links)} links from chat {chat_id}")
+            await join_multiple(client, message, links)
+        return
+
+# ---------- فایل txt ----------
+@app.on_message(filters.document)
+async def handle_file(client, message: Message):
+    if not is_sudo(message):
+        return
     mime = (message.document.mime_type or "").lower()
     name = (message.document.file_name or "").lower()
     if "text" in mime or name.endswith(".txt"):
         file_path = await message.download()
         try:
             with open(file_path, "r", encoding="utf-8") as f:
-                links = [line.strip() for line in f if line.strip()]
+                links = [norm(line) for line in f if norm(line)]
             await join_multiple(client, message, links)
         finally:
             try:
@@ -68,10 +116,10 @@ async def handle_file(client, message):
             except:
                 pass
     else:
-        await message.reply_text("❗ فقط فایل txt بفرست لطفاً.")
+        await message.reply_text("❗ فقط فایل txt بفرست.")
 
-# ---------- تابع جوین ----------
-async def try_join(bot, link):
+# ---------- جوین ----------
+async def try_join(bot: Client, link: str):
     if link.startswith(("https://t.me/joinchat/", "https://t.me/+")):
         await bot.join_chat(link)
     elif link.startswith(("https://t.me/", "@")):
@@ -82,14 +130,12 @@ async def try_join(bot, link):
     else:
         raise ValueError("لینک معتبر نیست")
 
-# ---------- تابع چندلینکی ----------
-async def join_multiple(client, message, links):
+async def join_multiple(client: Client, message: Message, links: list[str]):
     results = []
     for link in links:
         if link in joined_links:
             results.append(f"⏭ قبلاً عضو شده بودم: {link}")
             continue
-
         try:
             await try_join(app, link)
             joined_links.add(link)
@@ -100,22 +146,24 @@ async def join_multiple(client, message, links):
                 joined_links.add(link)
                 results.append(f"⏭ قبلاً عضو بودم: {link}")
             elif "INVITE_HASH_EXPIRED" in err or "invite" in err.lower():
-                results.append(f"🚫 لینک منقضی یا غیرقابل‌استفاده: {link}")
+                results.append(f"🚫 لینک منقضی/غیرقابل‌استفاده: {link}")
             else:
                 results.append(f"❌ خطا برای {link}: {err}")
 
-    if message:
-        text = "\n".join(results[-30:]) or "🔎 هیچ لینکی پردازش نشد."
+    text = "\n".join(results[-30:]) or "🔎 هیچ لینکی پردازش نشد."
+    try:
         await message.reply_text(f"📋 نتیجه:\n{text}")
+    except Exception as e:
+        print("[send result error]", e, text)
 
-# ---------- بررسی خودکار فایل ----------
+# ---------- چک خودکار فایل links.txt ----------
 async def auto_check_links():
     while True:
         await asyncio.sleep(CHECK_INTERVAL * 60)
         if os.path.exists(LINKS_FILE):
             try:
                 with open(LINKS_FILE, "r", encoding="utf-8") as f:
-                    links = [line.strip() for line in f if line.strip()]
+                    links = [norm(line) for line in f if norm(line)]
                 if links:
                     print(f"🔁 auto checking {len(links)} links...")
                     class Dummy:
@@ -124,29 +172,14 @@ async def auto_check_links():
             except Exception as e:
                 print("Auto-check error:", e)
 
-# ---------- دستور خروج ----------
-@app.on_message(sudo_filter & filters.regex(r"^برو بیرون$"))
-async def leave_group(client, message):
-    try:
-        await client.leave_chat(message.chat.id)
-        await message.reply_text("🚪 از گروه خارج شدم.")
-    except Exception as e:
-        await message.reply_text(f"⚠️ خطا هنگام خروج: {e}")
-
-# ---------- وضعیت ----------
-@app.on_message(sudo_filter & filters.regex(r"^وضعیت$"))
-async def status(client, message):
-    await message.reply_text(f"🟢 فعال!\nتعداد گروه‌های جوین‌شده: {len(joined_links)}")
-
-# ---------- شروع ----------
+# ---------- main ----------
 async def main():
     if not SESSION_STRING:
-        print("❌ ERROR: SESSION_STRING در config vars یافت نشد.")
+        print("ERROR: SESSION_STRING is missing in config vars.")
         return
-
     await app.start()
-    print("✅ یوزربات روشن شد و در حال اجراست.")
-    await send_online_message()  # پیام به سودو
+    print("✅ Userbot is up.")
+    await notify_online()
     asyncio.create_task(auto_check_links())
     await asyncio.Event().wait()
 
