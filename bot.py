@@ -1,41 +1,40 @@
-from pyrogram import Client, filters
-from pyrogram.errors import UserAlreadyParticipant
-
 import os
+from pyrogram import Client, filters
 
+# اطلاعات از Config Vars هروکو گرفته می‌شن
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
-SESSION_STRING = os.getenv("SESSION_STRING")  # از Pyrogram بگیر
+SESSION_STRING = os.getenv("SESSION_STRING")
 
-app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
+# ساخت یوزربات
+app = Client(name="userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 
-@app.on_message(filters.text)
-async def join_leave_handler(client, message):
-    text = message.text.lower().strip()
-    chat = message.chat
+# دستور "بیا"
+@app.on_message(filters.me & filters.regex(r"^بیا"))
+async def join_group(client, message):
+    try:
+        text = message.text.split(" ", 1)
+        if len(text) == 1:
+            await message.reply_text("❗ لطفاً لینک یا یوزرنیم گروه رو هم بنویس.\nمثال:\nبیا https://t.me/examplegroup")
+            return
 
-    # ✅ وقتی بنویسی "بیا" → ربات جوین میشه
-    if text == "بیا":
-        if message.chat.username:
-            link = f"https://t.me/{message.chat.username}"
-        else:
-            link = message.invite_link if hasattr(message, "invite_link") else None
+        link = text[1].strip()
+        if link.startswith("https://t.me/"):
+            link = link.replace("https://t.me/", "").replace("@", "")
 
-        try:
-            await client.join_chat(link or chat.id)
-            await message.reply_text("✅ اومدم داخل گروه 😎")
-        except UserAlreadyParticipant:
-            await message.reply_text("من از قبل توی گروه بودم 😅")
-        except Exception as e:
-            await message.reply_text(f"❌ نتونستم بیام:\n`{e}`")
+        await client.join_chat(link)
+        await message.reply_text(f"✅ با موفقیت وارد گروه {link} شدم!")
+    except Exception as e:
+        await message.reply_text(f"❌ نتونستم بیام:\n`{e}`")
 
-    # ❌ وقتی بنویسی "برو بیرون" → ربات لفت میده
-    elif text == "برو بیرون":
-        try:
-            await message.reply_text("🫡 چشم، دارم میرم...")
-            await client.leave_chat(chat.id)
-        except Exception as e:
-            await message.reply_text(f"❌ نتونستم برم:\n`{e}`")
+# دستور "برو بیرون"
+@app.on_message(filters.me & filters.regex(r"^برو بیرون"))
+async def leave_group(client, message):
+    try:
+        await client.leave_chat(message.chat.id)
+    except Exception as e:
+        await message.reply_text(f"خطا هنگام خروج: {e}")
 
-print("✅ Userbot آماده‌ست ...")
+# شروع برنامه
+print("✅ Userbot started successfully!")
 app.run()
