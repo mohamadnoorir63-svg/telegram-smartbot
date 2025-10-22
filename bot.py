@@ -1,13 +1,11 @@
-# bot.py
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 import os, asyncio, yt_dlp, shutil, uuid
 
 API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH"))
+API_HASH = os.getenv("API_HASH")
 
 app = Client("musicbot", api_id=API_ID, api_hash=API_HASH)
-
 # وضعیت‌ها در حافظه (برای هر chat_id یک صف و state)
 chats = {}  # chat_id -> {"queue": [ {"query":..., "title":...} ], "playing": False, "paused": False, "volume": 100, "speed":1.0}
 
