@@ -1,18 +1,20 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-import os, yt_dlp, asyncio
+import os
+import yt_dlp
+import asyncio
 
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 
-# همون فایل سشن قدیمی
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH)
+
 
 @app.on_message(filters.text)
 async def music_downloader(client, message):
     text = (message.text or "").strip()
 
-    # تشخیص دستور
+    # تشخیص دستور کاربر
     if text.startswith("/music") or text.startswith("!music"):
         parts = text.split(maxsplit=1)
         if len(parts) < 2:
@@ -33,6 +35,7 @@ async def music_downloader(client, message):
     if not os.path.exists("downloads"):
         os.mkdir("downloads")
 
+    # تابع دانلود آهنگ
     async def try_download():
         ydl_opts = {
             "format": "bestaudio/best",
@@ -51,15 +54,12 @@ async def music_downloader(client, message):
         file_path, info = await asyncio.to_thread(try_download)
         title = info.get("title", "Unknown Title")
         artist = info.get("uploader", "Unknown Artist")
-        url = info.get("webpage_url", "")
+        url = info.get("webpage_url", "https://youtube.com")
 
-        # 🎛️ پنل ساده زیر آهنگ
+        # 🎵 دکمه‌های زیبا زیر آهنگ
         buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🎧 لینک آهنگ", url=url if url else "https://youtube.com")],
-            [
-                InlineKeyboardButton("🔁 دانلود دوباره", url="https://t.me/{}".format(client.me.username)),
-                InlineKeyboardButton("❌ حذف دستی", url="https://t.me/{}".format(client.me.username))
-            ]
+            [InlineKeyboardButton("🎧 لینک آهنگ", url=url)],
+            [InlineKeyboardButton("🤖 ساخت ربات مشابه", url=f"https://t.me/{client.me.username}")]
         ])
 
         await m.edit_text(f"📤 در حال ارسال آهنگ `{title}` ...")
@@ -68,7 +68,7 @@ async def music_downloader(client, message):
             audio=file_path,
             title=title,
             performer=artist,
-            caption=f"🎶 {title}\n👤 {artist}\n\nارسال شده توسط 🤖 *خنگول موزیک بات*",
+            caption=f"🎶 {title}\n👤 {artist}\n\nدانلود شده توسط 🎧 *خنگول موزیک بات*",
             reply_markup=buttons
         )
 
@@ -78,5 +78,6 @@ async def music_downloader(client, message):
     except Exception as e:
         await m.edit_text(f"❌ خطا در دریافت آهنگ:\n`{e}`")
 
-print("🎧 Music Bot Online with Simple Panel...")
+
+print("🎧 Music Bot Online...")
 app.run()
