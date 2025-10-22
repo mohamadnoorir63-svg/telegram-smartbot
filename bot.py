@@ -1,152 +1,167 @@
 import os
 import asyncio
-import re
 import random
-from datetime import datetime, timedelta
 from pyrogram import Client, filters
-from pyrogram.errors import FloodWait, UserPrivacyRestricted, ChatAdminRequired, UserNotMutualContact, UserAlreadyParticipant, UserBannedInChannel
 
-# ---------- تنظیمات ----------
+# ---------- ⚙️ تنظیمات اصلی ----------
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 SESSION_STRING = os.getenv("SESSION_STRING")
+
 SUDO_USERS = [7089376754]  # آیدی عددی خودت
-USERS_FILE = "users_list.txt"
-GROUPS_FILE = "groups_list.txt"
-GROUP_MESSAGES_INTERVAL = 1800  # نیم ساعت
+DATA_FILE = "users.txt"
+GROUPS_FILE = "groups.txt"
 
-# ---------- ساخت یوزربات ----------
+# ---------- 💬 تنظیمات پیام‌ها ----------
+AUTO_GROUP_MESSAGES = [
+    "سلام بچه‌ها 😄",
+    "کسی هست حرف بزنه؟ 😅",
+    "حوصلم سر رفته 😐",
+    "یه آهنگ خوب پیشنهاد بدین 🎶",
+    "چیکار می‌کنین رفقا؟ 😎",
+]
+
+# ---------- 🧠 ساخت یوزربات ----------
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
-
 known_users = set()
-known_groups = set()
-private_replied_users = set()
-last_group_message = {}
+joined_groups = set()
+waiting_for_links = {}
 
-# ✅ فیلتر مخصوص سودو
+# ---------- 🧍 ذخیره کاربران جدید ----------
+@app.on_message(filters.private)
+async def save_user(client, message):
+    user_id = message.from_user.id
+    name = message.from_user.first_name or "ناشناس"
+    if user_id not in known_users:
+        known_users.add(user_id)
+        with open(DATA_FILE, "a", encoding="utf-8") as f:
+            f.write(f"{user_id} | {name}\n")
+        print(f"🆕 کاربر جدید ثبت شد: {name} ({user_id})")
+        await message.reply_text("سلام 😄 خوش اومدی 💖")
+
+# ---------- 💌 پاسخ خودکار به پیام‌های خصوصی ----------
+@app.on_message(filters.private & filters.text)
+async def auto_reply_pm(client, message):
+    if message.from_user.id not in SUDO_USERS:
+        await message.reply_text("سلام 😊 من فعلاً مشغولم، بعداً میام صحبت کنیم 💬")
+
+# ---------- 👑 فقط برای سودو (تو) ----------
 def is_sudo(_, __, message):
     return message.from_user and message.from_user.id in SUDO_USERS
 
 sudo_filter = filters.create(is_sudo)
 
-# ✅ دستور بیا
+# ---------- 🪄 دستور «بیا» ----------
 @app.on_message(filters.text & sudo_filter)
 async def sara_commands(client, message):
     text = message.text.strip().lower()
 
-    # اگر گفتی بیا
+    # 🟢 بیا
     if text == "بیا":
-        await message.reply_text("📎 لینک‌هاتو بفرست، هرکدوم در یک خط 💫")
+        waiting_for_links[message.chat.id] = True
+        await message.reply_text("📎 لینک‌هاتو بفرست (هر کدوم در یک خط)، وقتی تموم شد بنویس: پایان")
         return
 
-    # اگر گفتی آمار
+    # 📊 آمار
     if text == "آمار":
-        await message.reply_text("📊 فعلاً فقط توی دیتابیس منی، سارا آماده‌ست 💖")
+        await message.reply_text(
+            f"📊 آمار فعلی:\n"
+            f"👥 کاربران ذخیره‌شده: {len(known_users)}\n"
+            f"👥 گروه‌های جوین‌شده: {len(joined_groups)}\n"
+            f"💖 سارا فعاله و گوش به فرمانته!"
+        )
         return
 
-    # اگر گفتی برو بیرون
+    # 🧹 پاکسازی گروه‌های بن‌شده
+    if text == "پاکسازی":
+        await clean_banned_groups(client, message)
+        return
+
+    # 🚪 خروج از گروه فعلی
     if text == "برو بیرون":
         try:
             await client.leave_chat(message.chat.id)
-        except:
             await message.reply_text("🚪 از گروه خارج شدم.")
-        return
-# ---------- شروع ----------
-@app.on_message(filters.me & filters.regex("^/start$"))
-async def start_me(client, message):
-    await message.reply_text("✅ یوزربات آنلاین است و آماده‌ی کار!")
-
-# ---------- پاسخ خودکار ----------
-@app.on_message(filters.text & ~filters.me)
-async def auto_reply(client, message):
-    user = message.from_user
-    if not user:
-        return
-
-    # ثبت کاربر
-    if user.id not in known_users:
-        known_users.add(user.id)
-        with open(USERS_FILE, "a", encoding="utf-8") as f:
-            f.write(f"{user.first_name or 'Unknown'} ({user.id})\n")
-        print(f"🆕 کاربر جدید ثبت شد: {user.first_name} ({user.id})")
-
-    # فقط یک‌بار در پیوی جواب بده
-    if message.chat.type == "private":
-        if user.id not in private_replied_users:
-            private_replied_users.add(user.id)
-            await message.reply_text(random.choice(["سلام 👋", "درود 🌹", "خوبی؟ 😎"]))
-
-    # در گروه هر نیم ساعت یک پیام تصادفی
-    elif message.chat.type in ["supergroup", "group"]:
-        now = datetime.now()
-        if message.chat.id not in last_group_message or (now - last_group_message[message.chat.id]) > timedelta(seconds=GROUP_MESSAGES_INTERVAL):
-            last_group_message[message.chat.id] = now
-            await message.reply_text(random.choice(["سلام بچه‌ها 😄", "کسی هست؟ 😂", "حوصلم سر رفته 😅"]))
-
-# ---------- دستور اد همه یا اد خاص ----------
-@app.on_message(sudo_filter & filters.text & filters.regex(r"^اد($| )"))
-async def add_users_to_group(client, message):
-    if message.chat.type not in ["supergroup", "group"]:
-        await message.reply_text("⚠️ فقط در گروه می‌تونی از این دستور استفاده کنی.")
-        return
-
-    # بررسی ادمین بودن
-    member = await client.get_chat_member(message.chat.id, "me")
-    if not member.privileges or not member.privileges.can_invite_users:
-        await message.reply_text("🚫 من ادمین نیستم یا اجازه اد کردن ندارم!")
-        return
-
-    # خواندن کاربران ذخیره‌شده
-    if not os.path.exists(USERS_FILE):
-        await message.reply_text("⚠️ هنوز هیچ کاربری ذخیره نشده.")
-        return
-
-    with open(USERS_FILE, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-
-    # استخراج آیدی‌ها از فایل
-    user_ids = []
-    for line in lines:
-        match = re.search(r"\((\d+)\)", line)
-        if match:
-            user_ids.append(int(match.group(1)))
-
-    # دستور خاص: "اد @username"
-    args = message.text.strip().split(maxsplit=1)
-    if len(args) > 1 and args[1].startswith("@"):
-        username = args[1].replace("@", "")
-        try:
-            user = await client.get_users(username)
-            user_ids = [user.id]
         except Exception as e:
-            await message.reply_text(f"❌ کاربر پیدا نشد:\n`{e}`")
+            await message.reply_text(f"⚠️ خطا هنگام خروج: {e}")
+        return
+
+    # 🟢 پایان دریافت لینک‌ها
+    if text == "پایان" and waiting_for_links.get(message.chat.id):
+        waiting_for_links[message.chat.id] = False
+        await message.reply_text("✅ دریافت لینک‌ها تموم شد، دارم می‌رم سراغشون 😎")
+        return
+
+# ---------- 📎 گرفتن لینک‌ها ----------
+@app.on_message(sudo_filter & filters.text)
+async def handle_links(client, message):
+    chat_id = message.chat.id
+    if not waiting_for_links.get(chat_id):
+        return
+
+    links = [line.strip() for line in message.text.splitlines() if line.strip()]
+    for link in links:
+        await try_join_group(client, message, link)
+
+# ---------- 📄 تابع جوین ----------
+async def try_join_group(client, message, link):
+    try:
+        if link.startswith(("https://t.me/joinchat/", "https://t.me/+")):
+            await client.join_chat(link)
+        elif link.startswith(("https://t.me/", "@")):
+            username = link.replace("https://t.me/", "").replace("@", "")
+            await client.join_chat(username)
+        else:
+            await message.reply_text(f"⚠️ لینک نامعتبر: {link}")
             return
+        joined_groups.add(link)
+        with open(GROUPS_FILE, "a", encoding="utf-8") as f:
+            f.write(f"{link}\n")
+        await message.reply_text(f"✅ با موفقیت عضو شدم: {link}")
+    except Exception as e:
+        err = str(e)
+        if "USER_ALREADY_PARTICIPANT" in err:
+            await message.reply_text(f"⏭ قبلاً عضو بودم: {link}")
+        elif "INVITE_HASH_EXPIRED" in err:
+            await message.reply_text(f"🚫 لینک منقضی یا نامعتبر: {link}")
+        else:
+            await message.reply_text(f"❌ خطا در جوین {link}:\n`{err}`")
 
-    await message.reply_text(f"👥 شروع اضافه کردن {len(user_ids)} کاربر... لطفاً صبر کن ⚙️")
-
-    added, failed = 0, 0
-    for user_id in user_ids:
+# ---------- 🧹 پاکسازی گروه‌های بن‌شده ----------
+async def clean_banned_groups(client, message):
+    left = 0
+    for g in list(joined_groups):
         try:
-            await client.add_chat_members(message.chat.id, user_id)
-            added += 1
-            await asyncio.sleep(random.uniform(3, 6))  # جلوگیری از Flood
-        except (UserPrivacyRestricted, UserNotMutualContact, UserBannedInChannel, UserAlreadyParticipant):
-            failed += 1
-        except FloodWait as e:
-            await asyncio.sleep(e.value)
-        except Exception as e:
-            print(f"⚠️ خطا در افزودن {user_id}: {e}")
-            failed += 1
+            chat = await client.get_chat(g)
+            if chat and chat.type in ["group", "supergroup", "channel"]:
+                continue
+        except Exception:
+            try:
+                await client.leave_chat(g)
+                left += 1
+            except:
+                pass
+            joined_groups.remove(g)
+    await message.reply_text(f"🧹 پاکسازی انجام شد — از {left} گروه خارج شدم.")
 
-    await message.reply_text(f"✅ عملیات اد تمام شد.\n👤 اضافه‌شده: {added}\n🚫 ناموفق: {failed}")
+# ---------- 🤖 پیام دوره‌ای در گروه‌ها ----------
+async def periodic_group_messages():
+    while True:
+        if joined_groups:
+            msg = random.choice(AUTO_GROUP_MESSAGES)
+            for g in list(joined_groups):
+                try:
+                    await app.send_message(g, msg)
+                except:
+                    pass
+        await asyncio.sleep(20 * 60)  # هر ۲۰ دقیقه
 
-# ---------- لیست کاربران ----------
-@app.on_message(sudo_filter & filters.regex(r"^لیست کاربران$"))
-async def send_users_file(client, message):
-    if os.path.exists(USERS_FILE):
-        await message.reply_document(USERS_FILE, caption=f"👤 تعداد کاربران: {len(known_users)}")
-    else:
-        await message.reply_text("⚠️ هیچ کاربری ثبت نشده.")
+# ---------- 🚀 شروع ----------
+async def main():
+    await app.start()
+    print("💖 سارا بات فعال شد و در حال اجراست...")
+    asyncio.create_task(periodic_group_messages())
+    await asyncio.Event().wait()
 
-print("✅ Userbot with auto-reply + add-users system started...")
-app.run()
+if __name__ == "__main__":
+    asyncio.run(main())
