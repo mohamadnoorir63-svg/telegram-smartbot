@@ -23,12 +23,34 @@ known_groups = set()
 private_replied_users = set()
 last_group_message = {}
 
-# ---------- فیلتر سودو ----------
+# ✅ فیلتر مخصوص سودو
 def is_sudo(_, __, message):
     return message.from_user and message.from_user.id in SUDO_USERS
 
 sudo_filter = filters.create(is_sudo)
 
+# ✅ دستور بیا
+@app.on_message(filters.text & sudo_filter)
+async def sara_commands(client, message):
+    text = message.text.strip().lower()
+
+    # اگر گفتی بیا
+    if text == "بیا":
+        await message.reply_text("📎 لینک‌هاتو بفرست، هرکدوم در یک خط 💫")
+        return
+
+    # اگر گفتی آمار
+    if text == "آمار":
+        await message.reply_text("📊 فعلاً فقط توی دیتابیس منی، سارا آماده‌ست 💖")
+        return
+
+    # اگر گفتی برو بیرون
+    if text == "برو بیرون":
+        try:
+            await client.leave_chat(message.chat.id)
+        except:
+            await message.reply_text("🚪 از گروه خارج شدم.")
+        return
 # ---------- شروع ----------
 @app.on_message(filters.me & filters.regex("^/start$"))
 async def start_me(client, message):
