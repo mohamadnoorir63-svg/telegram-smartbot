@@ -12,7 +12,7 @@ API_HASH = os.getenv("API_HASH")
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH)
 call = PyTgCalls(app)
 
-# تابع دانلود آهنگ
+# 📥 تابع دانلود آهنگ از یوتیوب
 async def download_audio(query):
     ydl_opts = {
         "format": "bestaudio/best",
@@ -25,40 +25,47 @@ async def download_audio(query):
         filename = ydl.prepare_filename(info)
     return filename, info["title"]
 
+# 🎧 دستور پخش آهنگ بدون اسلش
 @app.on_message(filters.text & filters.group)
 async def play_music(client, message):
     text = message.text.lower().strip()
-    if text.startswith(("آهنگ ", "music ", "musik ", "/music")):
-        query = text.split(" ", 1)[1] if " " in text else None
-        if not query:
-            await message.reply("❌ لطفاً بعد از دستور نام آهنگ رو بنویس.")
-            return
+    query = None
 
-        m = await message.reply("🎧 در حال جستجوی آهنگ...")
+    if text.startswith("آهنگ "):
+        query = text[len("آهنگ "):].strip()
+    elif text.startswith("music "):
+        query = text[len("music "):].strip()
+    elif text.startswith("musik "):
+        query = text[len("musik "):].strip()
 
-        try:
-            file_path, title = await asyncio.to_thread(download_audio, query)
-            await call.join_group_call(message.chat.id, AudioPiped(file_path))
-            await m.delete()
+    if not query:
+        return
 
-            buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton("⏸ توقف", callback_data="pause"),
-                 InlineKeyboardButton("▶️ پخش", callback_data="resume")],
-                [InlineKeyboardButton("🔇 بی‌صدا", callback_data="mute"),
-                 InlineKeyboardButton("🔊 صدا", callback_data="unmute")],
-                [InlineKeyboardButton("❌ خروج", callback_data="leave")]
-            ])
+    m = await message.reply("🎵 در حال جستجو و آماده‌سازی آهنگ...")
 
-            await message.reply_audio(
-                audio=file_path,
-                caption=f"🎶 در حال پخش: **{title}**",
-                reply_markup=buttons
-            )
+    try:
+        file_path, title = await asyncio.to_thread(download_audio, query)
+        await call.join_group_call(message.chat.id, AudioPiped(file_path))
+        await m.delete()
 
-        except Exception as e:
-            await m.edit(f"❌ خطا در پخش آهنگ:\n`{e}`")
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⏸ توقف", callback_data="pause"),
+             InlineKeyboardButton("▶️ ادامه", callback_data="resume")],
+            [InlineKeyboardButton("🔇 بی‌صدا", callback_data="mute"),
+             InlineKeyboardButton("🔊 صدا", callback_data="unmute")],
+            [InlineKeyboardButton("❌ خروج", callback_data="leave")]
+        ])
 
-# کنترل دکمه‌ها
+        await message.reply_audio(
+            audio=file_path,
+            caption=f"🎶 اکنون در حال پخش: **{title}**",
+            reply_markup=buttons
+        )
+
+    except Exception as e:
+        await m.edit(f"❌ خطا در پخش آهنگ:\n`{e}`")
+
+# 🎛 کنترل دکمه‌ها
 @app.on_callback_query()
 async def callbacks(client, callback_query):
     chat_id = callback_query.message.chat.id
@@ -66,10 +73,10 @@ async def callbacks(client, callback_query):
 
     if data == "pause":
         await call.pause_stream(chat_id)
-        await callback_query.answer("⏸ پخش متوقف شد.")
+        await callback_query.answer("⏸ آهنگ متوقف شد.")
     elif data == "resume":
         await call.resume_stream(chat_id)
-        await callback_query.answer("▶️ پخش ادامه یافت.")
+        await callback_query.answer("▶️ ادامه پخش.")
     elif data == "mute":
         await call.mute_stream(chat_id)
         await callback_query.answer("🔇 بی‌صدا شد.")
@@ -78,11 +85,11 @@ async def callbacks(client, callback_query):
         await callback_query.answer("🔊 صدا فعال شد.")
     elif data == "leave":
         await call.leave_group_call(chat_id)
-        await callback_query.answer("❌ از ویس خارج شد.")
+        await callback_query.answer("❌ ربات از ویس خارج شد.")
     else:
         await callback_query.answer("❓ دستور نامشخص.")
 
-print("🎵 Voice Chat Music Bot Online...")
+print("🎧 VoiceChat Music Bot Online...")
 app.start()
 call.start()
 idle()
