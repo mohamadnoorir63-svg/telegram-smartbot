@@ -29,11 +29,12 @@ async def download_music(query):
     return file_path, info
 
 
-@app.on_message(filters.text & ~filters.edited)
+# 🟢 اینجا فقط filters.text استفاده شده (بدون edited)
+@app.on_message(filters.text)
 async def detect_music_request(client, message):
     text = message.text.lower().strip()
 
-    # اگر پیام شامل یکی از کلیدواژه‌ها بود
+    # اگر پیام با یکی از کلیدواژه‌ها شروع شد
     if text.startswith("آهنگ ") or text.startswith("music ") or text.startswith("musik "):
         query = re.sub(r"^(آهنگ|music|musik)\s+", "", text).strip()
         if not query:
