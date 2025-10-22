@@ -5,21 +5,28 @@ from pyrogram import Client, filters
 # ---------- تنظیمات ----------
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
-SESSION_STRING = os.getenv("SESSION_STRING")  # حتما در Config Vars بذار
-SUDO_USERS = [7089376754]  # آی‌دی عددی خودت
+SESSION_STRING = os.getenv("SESSION_STRING")  # باید در Config Vars باشه
+SUDO_USERS = [int(x) for x in os.getenv("SUDO_USERS", "7089376754").split()]
 LINKS_FILE = "links.txt"
 CHECK_INTERVAL = 5  # هر چند دقیقه فایل links.txt چک بشه
 
 # ---------- ساخت یوزربات ----------
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 
-joined_links = set()        # لینک‌هایی که قبلاً جوین شده‌اند
-waiting_for_links = {}      # حالت "منتظر لینک" برای هر چت
+joined_links = set()
+waiting_for_links = {}
 
-# فیلتر برای فقط قبول پیام از سودو
 sudo_filter = filters.user(SUDO_USERS)
 
-# ---------- دستور: بیا (شروع) ----------
+# ---------- وقتی استارت شد پیام بده ----------
+async def send_online_message():
+    try:
+        for sudo in SUDO_USERS:
+            await app.send_message(sudo, "✅ یوزربات روشن و آنلاین است!")
+    except Exception as e:
+        print("⚠️ خطا در ارسال پیام آنلاین:", e)
+
+# ---------- دستور: بیا ----------
 @app.on_message(sudo_filter & filters.text & filters.regex(r"^بیا$"))
 async def ask_for_links(client, message):
     waiting_for_links[message.chat.id] = True
@@ -47,7 +54,6 @@ async def handle_links(client, message):
 # ---------- گرفتن لینک‌ها از فایل txt ----------
 @app.on_message(sudo_filter & filters.document)
 async def handle_file(client, message):
-    # قبول فقط فایل text/plain یا پسوند txt
     mime = (message.document.mime_type or "").lower()
     name = (message.document.file_name or "").lower()
     if "text" in mime or name.endswith(".txt"):
@@ -62,11 +68,10 @@ async def handle_file(client, message):
             except:
                 pass
     else:
-        await message.reply_text("❗ فایل txt بفرست لطفاً.")
+        await message.reply_text("❗ فقط فایل txt بفرست لطفاً.")
 
-# ---------- تابع تلاش برای جوین یک لینک ----------
+# ---------- تابع جوین ----------
 async def try_join(bot, link):
-    # لینک‌های joinchat / + یا یوزرنیم/گروه عمومی
     if link.startswith(("https://t.me/joinchat/", "https://t.me/+")):
         await bot.join_chat(link)
     elif link.startswith(("https://t.me/", "@")):
@@ -77,7 +82,7 @@ async def try_join(bot, link):
     else:
         raise ValueError("لینک معتبر نیست")
 
-# ---------- تابع ورود به چند لینک با هندل دقیق خطا ----------
+# ---------- تابع چندلینکی ----------
 async def join_multiple(client, message, links):
     results = []
     for link in links:
@@ -86,11 +91,10 @@ async def join_multiple(client, message, links):
             continue
 
         try:
-            await try_join(app, link)  # چون تک سشن، از app استفاده می‌کنیم
+            await try_join(app, link)
             joined_links.add(link)
             results.append(f"✅ Joined: {link}")
         except Exception as e:
-            # تفکیک خطاها برای پیام کاربر
             err = str(e)
             if "USER_ALREADY_PARTICIPANT" in err or "already participant" in err.lower():
                 joined_links.add(link)
@@ -100,12 +104,11 @@ async def join_multiple(client, message, links):
             else:
                 results.append(f"❌ خطا برای {link}: {err}")
 
-    # ارسال نتیجه (آخرین 30 خط)
     if message:
         text = "\n".join(results[-30:]) or "🔎 هیچ لینکی پردازش نشد."
         await message.reply_text(f"📋 نتیجه:\n{text}")
 
-# ---------- بررسی خودکار فایل links.txt ----------
+# ---------- بررسی خودکار فایل ----------
 async def auto_check_links():
     while True:
         await asyncio.sleep(CHECK_INTERVAL * 60)
@@ -115,14 +118,13 @@ async def auto_check_links():
                     links = [line.strip() for line in f if line.strip()]
                 if links:
                     print(f"🔁 auto checking {len(links)} links...")
-                    # از یک پیام ساختگی استفاده می‌کنیم (خروجی روی لاگ)
                     class Dummy:
                         async def reply_text(self, text): print(text)
                     await join_multiple(app, Dummy(), links)
             except Exception as e:
                 print("Auto-check error:", e)
 
-# ---------- خروج از گروه ----------
+# ---------- دستور خروج ----------
 @app.on_message(sudo_filter & filters.regex(r"^برو بیرون$"))
 async def leave_group(client, message):
     try:
@@ -136,18 +138,17 @@ async def leave_group(client, message):
 async def status(client, message):
     await message.reply_text(f"🟢 فعال!\nتعداد گروه‌های جوین‌شده: {len(joined_links)}")
 
-# ---------- شروع امن و پایدار ----------
+# ---------- شروع ----------
 async def main():
-    # قبل از استارت حتما SESSION_STRING در Config Vars باید وجود داشته باشه
     if not SESSION_STRING:
-        print("ERROR: SESSION_STRING is missing in config vars.")
+        print("❌ ERROR: SESSION_STRING در config vars یافت نشد.")
         return
 
     await app.start()
-    print("✅ Single-session Userbot started and running.")
-    # اجرا همزمان تسک خودکار
+    print("✅ یوزربات روشن شد و در حال اجراست.")
+    await send_online_message()  # پیام به سودو
     asyncio.create_task(auto_check_links())
-    await asyncio.Event().wait()  # نگه داشتن برنامه برای همیشه
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
     try:
