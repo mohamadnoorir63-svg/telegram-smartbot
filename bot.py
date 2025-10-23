@@ -8,51 +8,59 @@ SESSION_STRING = os.getenv("SESSION_STRING")
 
 app = Client("music_userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 
-
-# 🎧 تابع دانلود آهنگ (چند منبعی)
-def download_song(query):
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "outtmpl": "song.%(ext)s",
-        "noplaylist": True,
-        "quiet": True,
-        "default_search": "auto",  # ← خودش منبع پیدا می‌کنه (YouTube/SoundCloud/Deezer)
-        "geo_bypass": True,
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192",
+# 🎧 تابع دانلود هوشمند
+def smart_download(query):
+    sources = [
+        f"ytsearch:{query}",          # YouTube
+        f"scsearch:{query}",          # SoundCloud
+        f"dzsearch:{query}",          # Deezer
+    ]
+    for src in sources:
+        try:
+            ydl_opts = {
+                "format": "bestaudio/best",
+                "outtmpl": "song.%(ext)s",
+                "quiet": True,
+                "noplaylist": True,
+                "default_search": "auto",
+                "geo_bypass": True,
+                "postprocessors": [
+                    {
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": "mp3",
+                        "preferredquality": "192",
+                    }
+                ],
             }
-        ],
-    }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(src, download=True)
+                filename = ydl.prepare_filename(info)
+                path = os.path.splitext(filename)[0] + ".mp3"
+                title = info.get("title", "Unknown")
+                duration = info.get("duration", 0)
+                m, s = divmod(duration, 60)
+                length = f"{m}:{s:02d}" if duration else "نامشخص"
+                return path, title, length
+        except Exception as e:
+            print(f"⚠️ خطا در {src}: {e}")
+            continue
+    raise Exception("هیچ منبع قابل دانلودی پیدا نشد ❌")
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(query, download=True)
-        filename = ydl.prepare_filename(info)
-        mp3_path = os.path.splitext(filename)[0] + ".mp3"
-        title = info.get("title", "Unknown Title")
-        duration = info.get("duration")
-        minutes = duration // 60 if duration else 0
-        seconds = duration % 60 if duration else 0
-        length = f"{minutes}:{seconds:02d}" if duration else "نامشخص"
-        return mp3_path, title, length
 
-
+# 🎵 هندل پیام‌ها
 @app.on_message(filters.text)
-async def handle_music(client, message):
-    text = message.text.strip().lower()
-
+async def play_music(client, message):
+    text = message.text.lower().strip()
     if text.startswith("آهنگ") or text.startswith("musik"):
         query = text.replace("آهنگ", "").replace("musik", "").strip()
         if not query:
-            await message.reply_text("🎵 لطفاً بعد از کلمه آهنگ یا musik اسم آهنگ رو بنویس.")
+            await message.reply_text("🎵 لطفاً بعد از کلمه 'آهنگ' یا 'musik' اسم آهنگ رو بنویس.")
             return
 
-        await message.reply_text("🎧 در حال جست‌وجو و دانلود آهنگ... لطفاً صبر کن 🔎")
+        await message.reply_text(f"🔎 در حال جست‌وجوی {query} ...")
 
         try:
-            path, title, length = download_song(query)
+            path, title, length = smart_download(query)
             caption = f"🎶 {title}\n🕒 مدت: {length}\n📀 درخواست‌شده توسط: {message.from_user.first_name}"
             await message.reply_audio(audio=path, caption=caption)
             os.remove(path)
@@ -60,5 +68,5 @@ async def handle_music(client, message):
             await message.reply_text(f"❌ خطا در دانلود آهنگ:\n`{str(e)[:400]}`")
 
 
-print("🎵 Sara MusicBot آماده‌ست!")
+print("🎧 سارا موزیک‌بات بدون کوکی آماده است 🎶")
 app.run()
