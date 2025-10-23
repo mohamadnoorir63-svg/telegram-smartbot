@@ -1,29 +1,33 @@
 import os
-import asyncio
 from pyrogram import Client
 
-# خواندن مقادیر از Config Vars
+# ---------- ⚙️ تنظیمات ----------
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 SESSION_STRING = os.getenv("SESSION_STRING")
 
-# ساخت کلاینت
+# ---------- 📱 ساخت یوزربات ----------
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 
-async def main():
-    print("🚀 در حال اتصال به تلگرام با session تنظیم‌شده در Heroku ...")
-    async with app:
-        print("✅ اتصال موفق! حالا لینک رو وارد کن (یا exit برای خروج):")
-        while True:
-            link = input("🔗 لینک: ").strip()
-            if link.lower() in ["exit", "خروج", "quit"]:
-                break
-            if not link:
-                continue
-            try:
-                await app.join_chat(link)
-                print(f"🎉 با موفقیت جوین شدی: {link}")
-            except Exception as e:
-                print(f"❌ خطا در جوین {link}: {repr(e)}")
+# ---------- 📩 دریافت لینک و جوین ----------
+@app.on_message()
+async def join_from_message(client, message):
+    if not message.text:
+        return
 
-asyncio.run(main())
+    text = message.text.strip()
+
+    # فقط اگر پیام شامل لینک t.me یا @username باشد
+    if "t.me/" in text or "telegram.me/" in text or text.startswith("@"):
+        try:
+            await client.join_chat(text)
+            await message.reply_text(f"🎉 با موفقیت جوین شدم → {text}")
+            print(f"✅ Joined successfully → {text}")
+        except Exception as e:
+            err = str(e)
+            await message.reply_text(f"❌ خطا در جوین:\n`{err}`")
+            print(f"⚠️ Error joining {text}: {err}")
+
+# ---------- 🚀 شروع ----------
+print("✅ ربات آماده است. فقط لینک بفرست تا جوین شود...")
+app.run()
