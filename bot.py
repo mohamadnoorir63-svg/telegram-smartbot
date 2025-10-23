@@ -8,24 +8,34 @@ import os
 
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
+SESSION_STRING = os.getenv("SESSION_STRING")
 
-app = Client("userbot", api_id=API_ID, api_hash=API_HASH)
+# ساخت سشن از متغیر محیطی
+app = Client(
+    name="userbot",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    session_string=SESSION_STRING
+)
+
 call = PyTgCalls(app)
 
 # 📥 دانلود آهنگ از یوتیوب
 async def download_audio(query):
+    os.makedirs("downloads", exist_ok=True)
     ydl_opts = {
         "format": "bestaudio/best",
         "outtmpl": "downloads/%(title)s.%(ext)s",
         "quiet": True,
         "noplaylist": True,
+        "extractaudio": True,
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(f"ytsearch1:{query}", download=True)["entries"][0]
         filename = ydl.prepare_filename(info)
     return filename, info["title"]
 
-# 🎧 پخش آهنگ
+# 🎧 دستور پخش آهنگ
 @app.on_message(filters.text & filters.group)
 async def play_music(client, message):
     text = message.text.lower().strip()
@@ -35,17 +45,18 @@ async def play_music(client, message):
         query = text[len("آهنگ "):].strip()
     elif text.startswith("music "):
         query = text[len("music "):].strip()
-    elif text.startswith("musik "):
-        query = text[len("musik "):].strip()
 
     if not query:
         return
 
-    m = await message.reply("🎵 در حال جستجو و آماده‌سازی آهنگ...")
+    m = await message.reply("🎵 در حال جستجو و دانلود آهنگ...")
 
     try:
         file_path, title = await asyncio.to_thread(download_audio, query)
-        await call.join_group_call(message.chat.id, AudioPiped(file_path))
+        await call.join_group_call(
+            message.chat.id,
+            AudioPiped(file_path)
+        )
         await m.delete()
 
         buttons = InlineKeyboardMarkup([
@@ -63,7 +74,7 @@ async def play_music(client, message):
     except Exception as e:
         await m.edit(f"❌ خطا در پخش آهنگ:\n`{e}`")
 
-# 🎚 کنترل دکمه‌ها
+# کنترل دکمه‌ها
 @app.on_callback_query()
 async def callbacks(client, callback_query):
     chat_id = callback_query.message.chat.id
@@ -79,7 +90,7 @@ async def callbacks(client, callback_query):
         await call.leave_group_call(chat_id)
         await callback_query.answer("❌ ربات از ویس خارج شد.")
 
-print("🎧 VoiceChat Music Bot Online...")
+print("🎧 Voice Chat Music Bot Online...")
 app.start()
 call.start()
 idle()
