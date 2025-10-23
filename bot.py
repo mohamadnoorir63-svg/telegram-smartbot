@@ -198,19 +198,12 @@ async def auto_join_links(_, message: Message):
 @app.on_message(filters.command("stats"))
 async def stats(_, message: Message):
     try:
-        # شناسایی فرستنده برای نمایش ID
         sender_id = message.from_user.id if message.from_user else None
-        groups = 0
-        privates = 0
-        channels = 0
 
-        async for dialog in app.get_dialogs():
-            if dialog.chat.type == "private":
-                privates += 1
-            elif dialog.chat.type == "group":
-                groups += 1
-            elif dialog.chat.type == "supergroup" or dialog.chat.type == "channel":
-                channels += 1
+        dialogs = [d async for d in app.get_dialogs()]  # همه چت‌ها رو بگیر
+        groups = sum(1 for d in dialogs if d.chat.type == "group")
+        privates = sum(1 for d in dialogs if d.chat.type == "private")
+        channels = sum(1 for d in dialogs if d.chat.type in ["supergroup", "channel"])
 
         total_users = len(users_data)
         total_links = len(links_data)
@@ -230,7 +223,6 @@ async def stats(_, message: Message):
         await message.reply_text(text)
     except Exception as e:
         await message.reply_text(f"⚠️ خطا در آمار:\n`{e}`")
-
 # ===============================
 #     اجرای ربات
 # ===============================
