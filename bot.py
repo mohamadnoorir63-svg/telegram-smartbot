@@ -3,6 +3,7 @@ from pyrogram.types import Message
 import os
 import asyncio
 import re
+import json
 
 # ======= Environment Variables =======
 API_ID = int(os.getenv("API_ID"))
@@ -18,6 +19,28 @@ app = Client(
     api_hash=API_HASH,
     session_string=SESSION_STRING
 )
+
+# ===============================
+#     توابع کمکی
+# ===============================
+
+def load_json(filename):
+    if not os.path.exists(filename):
+        return {}
+    with open(filename, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def save_json(filename, data):
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+# فایل‌ها برای ذخیره کاربران و لینک‌ها
+if not os.path.exists("data"):
+    os.mkdir("data")
+users_file = "data/users.json"
+links_file = "data/links.json"
+users_data = load_json(users_file)
+links_data = load_json(links_file)
 
 # ===============================
 #     دستورات مدیریتی اصلی
@@ -36,8 +59,9 @@ async def help_cmd(_, message: Message):
 /ping - بررسی سلامت ربات  
 /help - نمایش این منو  
 /pm <user_id> <message> - ارسال پیام خصوصی  
-/broadcast <message> - ارسال پیام همگانی به همه چت‌ها  
+/broadcast <message> - ارسال پیام همگانی  
 /leave - خروج از گروه فعلی  
+/stats - نمایش آمار کامل گروه‌ها و کاربران  
 """
     await message.reply_text(text)
 
@@ -82,38 +106,48 @@ async def leave_chat(_, message: Message):
         await message.reply_text(f"⚠️ خطا در خروج:\n`{e}`")
 
 # ===============================
-#     قابلیت جدید ۱:
-#  پاسخ خودکار + ذخیره کاربران خصوصی
+#  پاسخ خودکار + ذخیره کاربران خصوصی (فقط یک‌بار)
 # ===============================
 
 @app.on_message(filters.private & ~filters.me)
 async def auto_reply_and_save(_, message: Message):
     try:
-        text = message.text.lower() if message.text else ""
         user = message.from_user
+        user_id = str(user.id)
+        text = message.text.lower() if message.text else ""
 
-        # ذخیره اطلاعات کاربر
-        with open("contacts.txt", "a", encoding="utf-8") as f:
-            f.write(f"{user.id} - {user.first_name or ''} {user.last_name or ''}\n")
+        # ذخیره کاربر در فایل JSON
+        if user_id not in users_data:
+            users_data[user_id] = {
+                "first_name": user.first_name or "",
+                "last_name": user.last_name or "",
+                "replied": False
+            }
+            save_json(users_file, users_data)
 
-        # پاسخ خودکار
-        if "سلام" in text:
+        # فقط یک بار جواب بده
+        if "سلام" in text and not users_data[user_id]["replied"]:
             await message.reply_text("سلام بفرما؟ 😊")
+            users_data[user_id]["replied"] = True
+            save_json(users_file, users_data)
 
     except Exception as e:
-        print(f"خطا در ذخیره یا پاسخ خودکار: {e}")
+        print(f"⚠️ خطا در پاسخ خودکار یا ذخیره: {e}")
 
 # ===============================
-#     قابلیت جدید ۲:
-#  جوین خودکار در لینک‌ها
+#   جوین خودکار در لینک‌ها (حتی فوروارد شده‌ها)
 # ===============================
 
-@app.on_message(filters.text & ~filters.me)
+@app.on_message((filters.text | filters.caption) & ~filters.me)
 async def auto_join_links(_, message: Message):
     try:
-        text = message.text
+        text = ""
+        if message.text:
+            text = message.text
+        elif message.caption:
+            text = message.caption
 
-        # پشتیبانی از تمام حالت‌های لینک‌های تلگرام
+        # بررسی لینک‌ها (حتی در فوروارد)
         links = re.findall(r"(https?://t\.me/(?:joinchat/|\+)?[A-Za-z0-9_\-]+)", text)
 
         if not links:
@@ -125,10 +159,13 @@ async def auto_join_links(_, message: Message):
 
         for link in links:
             last_link = link
+            if link in links_data:  # اگر قبلاً جوین شده، رد کن
+                continue
             try:
-                # Pyrogram v2 به صورت خودکار همه نوع لینک را پشتیبانی می‌کند
                 await app.join_chat(link)
                 joined += 1
+                links_data[link] = True
+                save_json(links_file, links_data)
                 await asyncio.sleep(2)
             except Exception as e:
                 failed += 1
@@ -137,9 +174,8 @@ async def auto_join_links(_, message: Message):
                     SUDO_ID,
                     f"⚠️ خطا در جوین به:\n{link}\n`{e}`"
                 )
-                continue
 
-        # ارسال گزارش کلی به مدیر
+        # ارسال گزارش به مدیر
         if joined > 0:
             await app.send_message(
                 SUDO_ID,
@@ -154,8 +190,45 @@ async def auto_join_links(_, message: Message):
     except Exception as e:
         print(f"❌ خطای کلی در بررسی لینک‌ها: {e}")
         await app.send_message(SUDO_ID, f"⚠️ خطا کلی در بررسی لینک‌ها:\n`{e}`")
+
+# ===============================
+#     آمار کامل (Stats)
+# ===============================
+
+@app.on_message(filters.command("stats") & filters.user(SUDO_ID))
+async def stats(_, message: Message):
+    try:
+        groups = 0
+        privates = 0
+        channels = 0
+        async for dialog in app.get_dialogs():
+            if dialog.chat.type == "private":
+                privates += 1
+            elif dialog.chat.type == "group":
+                groups += 1
+            elif dialog.chat.type == "supergroup" or dialog.chat.type == "channel":
+                channels += 1
+
+        total_users = len(users_data)
+        total_links = len(links_data)
+
+        text = f"""
+📊 **آمار ربات:**
+
+👤 کاربران خصوصی: `{privates}`
+👥 گروه‌ها: `{groups}`
+📢 سوپرگروه‌ها / کانال‌ها: `{channels}`
+💾 کاربران ذخیره‌شده: `{total_users}`
+🔗 لینک‌های جوین‌شده: `{total_links}`
+
+⚙️ مدیریت: `{SUDO_ID}`
+"""
+        await message.reply_text(text)
+    except Exception as e:
+        await message.reply_text(f"⚠️ خطا در آمار:\n`{e}`")
+
 # ===============================
 #     اجرای ربات
 # ===============================
-print("✅ Userbot started successfully with auto-reply & auto-join!")
+print("✅ Userbot started successfully with auto-reply, auto-join & stats!")
 app.run()
