@@ -12,6 +12,7 @@ SESSION_STRING = os.getenv("SESSION_STRING")
 SUDO_ID = int(os.getenv("SUDO_ID"))  # ID کاربر مدیر (تو)
 # =====================================
 
+# ایجاد کلاینت Pyrogram با session string
 app = Client(
     name="userbot",
     api_id=API_ID,
@@ -36,8 +37,10 @@ def save_json(filename, data):
 # فایل‌ها برای ذخیره کاربران و لینک‌ها
 if not os.path.exists("data"):
     os.mkdir("data")
+
 users_file = "data/users.json"
 links_file = "data/links.json"
+
 users_data = load_json(users_file)
 links_data = load_json(links_file)
 
@@ -49,6 +52,7 @@ links_data = load_json(links_file)
 async def ping(_, message: Message):
     await message.reply_text("✅ Pong! Bot is alive.")
 
+
 @app.on_message(filters.command("help") & filters.user(SUDO_ID))
 async def help_cmd(_, message: Message):
     text = """
@@ -58,71 +62,53 @@ async def help_cmd(_, message: Message):
 /help - نمایش این منو  
 /pm <user_id> <message> - ارسال پیام خصوصی  
 /broadcast <message> - ارسال پیام همگانی  
-/send_groups <message> - ارسال فقط برای گروه‌ها  
-/send_users <message> - ارسال فقط برای کاربران خصوصی  
 /leave - خروج از گروه فعلی  
 /stats - نمایش آمار کامل گروه‌ها و کاربران  
 """
     await message.reply_text(text)
 
-# ===============================
-#   ارسال پیام به گروه‌ها و کاربران
-# ===============================
 
-@app.on_message(filters.command("send_groups") & filters.user(SUDO_ID))
-async def send_groups(_, message: Message):
+@app.on_message(filters.command("pm") & filters.user(SUDO_ID))
+async def pm(_, message: Message):
+    try:
+        parts = message.text.split(" ", 2)
+        if len(parts) < 3:
+            return await message.reply_text("❌ فرمت نادرست است.\nمثال:\n`/pm 123456789 سلام!`")
+        user_id = int(parts[1])
+        msg = parts[2]
+        await app.send_message(user_id, msg)
+        await message.reply_text(f"✅ پیام به `{user_id}` ارسال شد.")
+    except Exception as e:
+        await message.reply_text(f"⚠️ خطا:\n`{e}`")
+
+
+@app.on_message(filters.command("broadcast") & filters.user(SUDO_ID))
+async def broadcast(_, message: Message):
     if len(message.text.split()) < 2:
-        return await message.reply_text("❌ لطفاً متن پیام را وارد کنید.\nمثال:\n`/send_groups سلام گروهی‌ها!`")
-    
+        return await message.reply_text("❌ متن پیام را وارد کنید.")
     text = message.text.split(" ", 1)[1]
-    sent, failed = 0, 0
+    count = 0
+    async for dialog in app.get_dialogs():
+        try:
+            await app.send_message(dialog.chat.id, text)
+            count += 1
+            await asyncio.sleep(0.5)
+        except:
+            continue
+    await message.reply_text(f"📢 پیام برای {count} چت ارسال شد.")
 
-    dialogs = [d async for d in app.get_dialogs()]
-    if not dialogs:
-        await message.reply_text("⚠️ لیست چت‌ها خالی است. چند ثانیه صبر کنید تا همگام‌سازی شود...")
-        await asyncio.sleep(3)
-        dialogs = [d async for d in app.get_dialogs()]
 
-    for dialog in dialogs:
-        if dialog.chat.type in ["group", "supergroup"]:
-            try:
-                await app.send_message(dialog.chat.id, text)
-                sent += 1
-                await asyncio.sleep(0.7)
-            except Exception as e:
-                failed += 1
-                print(f"⚠️ ارسال به {dialog.chat.id} ناموفق بود: {e}")
-
-    await message.reply_text(f"📢 پیام برای {sent} گروه ارسال شد. ❌ خطا در {failed} مورد.")
-
-@app.on_message(filters.command("send_users") & filters.user(SUDO_ID))
-async def send_users(_, message: Message):
-    if len(message.text.split()) < 2:
-        return await message.reply_text("❌ لطفاً متن پیام را وارد کنید.\nمثال:\n`/send_users سلام دوست من!`")
-    
-    text = message.text.split(" ", 1)[1]
-    sent, failed = 0, 0
-
-    dialogs = [d async for d in app.get_dialogs()]
-    if not dialogs:
-        await message.reply_text("⚠️ لیست چت‌ها خالی است. چند ثانیه صبر کنید تا همگام‌سازی شود...")
-        await asyncio.sleep(3)
-        dialogs = [d async for d in app.get_dialogs()]
-
-    for dialog in dialogs:
-        if dialog.chat.type == "private":
-            try:
-                await app.send_message(dialog.chat.id, text)
-                sent += 1
-                await asyncio.sleep(0.7)
-            except Exception as e:
-                failed += 1
-                print(f"⚠️ ارسال به {dialog.chat.id} ناموفق بود: {e}")
-    
-    await message.reply_text(f"📬 پیام برای {sent} کاربر خصوصی ارسال شد. ❌ خطا در {failed} مورد.")
+@app.on_message(filters.command("leave") & filters.user(SUDO_ID))
+async def leave_chat(_, message: Message):
+    try:
+        chat_id = message.chat.id
+        await app.leave_chat(chat_id)
+        await message.reply_text("🚪 ربات از گروه خارج شد.")
+    except Exception as e:
+        await message.reply_text(f"⚠️ خطا در خروج:\n`{e}`")
 
 # ===============================
-#   پاسخ خودکار + ذخیره کاربران خصوصی (فقط یک‌بار)
+#  پاسخ خودکار + ذخیره کاربران خصوصی (فقط یک‌بار)
 # ===============================
 
 @app.on_message(filters.private & ~filters.me)
@@ -132,6 +118,7 @@ async def auto_reply_and_save(_, message: Message):
         user_id = str(user.id)
         text = message.text.lower() if message.text else ""
 
+        # ذخیره کاربر در فایل JSON
         if user_id not in users_data:
             users_data[user_id] = {
                 "first_name": user.first_name or "",
@@ -140,10 +127,12 @@ async def auto_reply_and_save(_, message: Message):
             }
             save_json(users_file, users_data)
 
+        # فقط یک بار جواب بده
         if "سلام" in text and not users_data[user_id]["replied"]:
-            await message.reply_text("سلام بفرما؟ ")
+            await message.reply_text("سلام بفرما؟ 😊")
             users_data[user_id]["replied"] = True
             save_json(users_file, users_data)
+
     except Exception as e:
         print(f"⚠️ خطا در پاسخ خودکار یا ذخیره: {e}")
 
@@ -162,16 +151,19 @@ async def auto_join_links(_, message: Message):
 
         joined = 0
         failed = 0
+        last_link = None
 
+        # لیست گروه‌هایی که از قبل عضو هستی تا دوباره تلاش نکنه
         existing_chats = {d.chat.id async for d in app.get_dialogs()}
 
         for link in links:
-            if link in links_data:
+            last_link = link
+            if link in links_data:  # اگر قبلاً جوین شده
                 continue
             try:
                 chat = await app.resolve_chat(link.replace("https://t.me/", ""))
                 if chat.id in existing_chats:
-                    print(f"ℹ️ از قبل در گروه {chat.title} هستم، نیازی به جوین نیست.")
+                    print(f"ℹ️ از قبل در گروه {chat.title} هستم، رد شد.")
                     links_data[link] = True
                     save_json(links_file, links_data)
                     continue
@@ -184,15 +176,25 @@ async def auto_join_links(_, message: Message):
             except Exception as e:
                 failed += 1
                 print(f"⚠️ خطا در جوین به {link}: {e}")
-                await app.send_message(SUDO_ID, f"⚠️ خطا در جوین:\n{link}\n`{e}`")
+                await app.send_message(
+                    SUDO_ID,
+                    f"⚠️ خطا در جوین به:\n{link}\n`{e}`"
+                )
 
         if joined > 0:
-            await app.send_message(SUDO_ID, f"✅ به {joined} لینک جدید جوین شدم!")
+            await app.send_message(
+                SUDO_ID,
+                f"✅ با موفقیت به {joined} لینک جدید جوین شدم!\n📎 آخرین لینک: {last_link}"
+            )
         elif failed > 0:
-            await app.send_message(SUDO_ID, f"❌ نتوانستم به {failed} لینک جوین شوم.")
+            await app.send_message(
+                SUDO_ID,
+                f"❌ نتوانستم به {failed} لینک جوین شوم (جزئیات بالا ارسال شد)"
+            )
+
     except Exception as e:
         print(f"❌ خطای کلی در بررسی لینک‌ها: {e}")
-        await app.send_message(SUDO_ID, f"⚠️ خطای کلی در بررسی لینک‌ها:\n`{e}`")
+        await app.send_message(SUDO_ID, f"⚠️ خطا کلی در بررسی لینک‌ها:\n`{e}`")
 
 # ===============================
 #     آمار کامل (Stats)
@@ -201,44 +203,37 @@ async def auto_join_links(_, message: Message):
 @app.on_message(filters.command("stats") & filters.user(SUDO_ID))
 async def stats(_, message: Message):
     try:
-        if message.chat.type != "private":
-            return await message.reply_text("⚠️ لطفاً این دستور را فقط در پیوی ارسال کنید.")
-
-        print("📊 اجرای دستور /stats ...")
-
-        dialogs = [d async for d in app.get_dialogs()]
-        privates = sum(1 for d in dialogs if d.chat.type == "private")
-        groups = sum(1 for d in dialogs if d.chat.type == "group")
-        supergroups = sum(1 for d in dialogs if d.chat.type == "supergroup")
-        channels = sum(1 for d in dialogs if d.chat.type == "channel")
-
+        sender_id = message.from_user.id if message.from_user else None
         me = await app.get_me()
         sudo_name = f"{me.first_name or ''} {me.last_name or ''}".strip()
+
+        dialogs = [d async for d in app.get_dialogs()]
+        groups = sum(1 for d in dialogs if d.chat.type == "group")
+        privates = sum(1 for d in dialogs if d.chat.type == "private")
+        channels = sum(1 for d in dialogs if d.chat.type in ["supergroup", "channel"])
 
         total_users = len(users_data)
         total_links = len(links_data)
 
         text = f"""
-📊 **آمار دقیق ربات:**
+📊 **آمار ربات:**
 
 👤 کاربران خصوصی: `{privates}`
 👥 گروه‌ها: `{groups}`
-🏛️ سوپرگروه‌ها: `{supergroups}`
-📢 کانال‌ها: `{channels}`
+📢 سوپرگروه‌ها / کانال‌ها: `{channels}`
 💾 کاربران ذخیره‌شده: `{total_users}`
 🔗 لینک‌های جوین‌شده: `{total_links}`
 
+🆔 آیدی فرستنده: `{sender_id}`
 👑 مدیر فعلی سشن: `{sudo_name}` (`{me.id}`)
 ⚙️ مدیریت تنظیم‌شده در ENV: `{SUDO_ID}`
 """
         await message.reply_text(text)
-        print("✅ آمار ارسال شد با موفقیت.")
     except Exception as e:
-        print(f"⚠️ خطا در /stats: {e}")
         await message.reply_text(f"⚠️ خطا در آمار:\n`{e}`")
 
 # ===============================
 #     اجرای ربات
 # ===============================
-print("✅ Userbot started successfully with optimized join, send_groups, send_users & stats!")
+print("✅ Userbot started successfully with auto-reply, optimized auto-join & stats!")
 app.run()
