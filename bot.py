@@ -265,21 +265,32 @@ if os.path.exists(USERS_FILE):
                 except:
                     pass
 
-
-@app.on_message(sudo & filters.text & filters.regex(r"^(کاربرا|users)$"))
-async def show_users_list(client, message):
-    if not os.path.exists(USERS_FILE):
-        await message.reply_text("⚠️ هنوز هیچ کاربری ذخیره نشده.")
-        return
-    with open(USERS_FILE, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-    if not lines:
-        await message.reply_text("⚠️ هنوز هیچ کاربری در فایل نیست.")
+@app.on_message(filters.private & filters.text)
+async def save_and_reply_user(client, message):
+    user = message.from_user
+    if not user:
         return
 
-    text = "\n".join([line.strip() for line in lines[-30:]])
-    count = len(lines)
-    await message.reply_text(f"👥 تعداد کل کاربران: {count}\n\n{text}")
+    user_id = str(user.id)
+    name = user.first_name or "ناشناس"
+    username = f"@{user.username}" if user.username else "نداره"
+    text = message.text.strip().lower()
+
+    # بررسی اینکه آیا کاربر جدید است یا قبلاً ذخیره شده
+    is_new_user = False
+    if user_id not in known_users:
+        known_users.add(user_id)
+        is_new_user = True
+        with open("users.txt", "a", encoding="utf-8") as f:
+            f.write(f"{user_id} | {name} | {username}\n")
+        print(f"🆕 کاربر جدید ثبت شد: {name} ({user_id})")
+
+    # پاسخ به کاربر
+    if is_new_user:
+        await message.reply_text(f"{name} سلام 🌹")
+    elif text in ["سلام", "salam", "hi", "hello"]:
+        await message.reply_text(f"سلام {name} 👋")
+
 
 
 @app.on_message(sudo & filters.text & filters.regex(r"^اد (\d+)$"))
