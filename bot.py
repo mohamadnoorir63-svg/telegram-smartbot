@@ -69,6 +69,58 @@ async def sara_commands(client, message):
     if text in ["پاکسازی", "clean"]:
         await clean_broken_groups(client, message)
         return
+        import re
+
+# ---------- ✅ کانال‌های مجاز برای جوین خودکار ----------
+ALLOWED_CHANNELS = ["MyLinksChannel", "SaraGroups"]  # فقط یوزرنیم بدون @
+SUDO_ID = 7089376754  # آیدی عددی خودت برای گزارش
+
+# ---------- 🤖 جوین خودکار از کانال‌های مجاز + ارسال گزارش ----------
+@app.on_message(filters.channel & filters.text)
+async def auto_join_from_allowed_channels(client, message):
+    chat = message.chat
+    if chat.username not in ALLOWED_CHANNELS:
+        return  # فقط از کانال‌های مجاز بخونه
+
+    text = message.text
+    links = re.findall(r"(https://t\.me/[^\s]+|@[\w\d_]+)", text)
+    if not links:
+        return
+
+    joined = 0
+    failed = 0
+    success_links = []
+    failed_links = []
+
+    for link in links:
+        try:
+            if link.startswith("@"):
+                link = link.replace("@", "")
+            await client.join_chat(link)
+            joined += 1
+            success_links.append(link)
+            print(f"✅ Joined from channel {chat.username}: {link}")
+        except Exception as e:
+            failed += 1
+            failed_links.append(f"{link} → {e}")
+            print(f"⚠️ Error joining {link}: {e}")
+
+    # 📩 ارسال گزارش به پی‌وی سودو
+    try:
+        report_text = (
+            f"📢 گزارش از کانال @{chat.username}\n"
+            f"✅ گروه‌های جدید: {joined}\n"
+            f"❌ خطاها: {failed}\n\n"
+        )
+
+        if success_links:
+            report_text += "📋 گروه‌های موفق:\n" + "\n".join(f"• {l}" for l in success_links[:10])
+        if failed_links:
+            report_text += "\n\n⚠️ خطاها:\n" + "\n".join(f"• {l}" for l in failed_links[:5])
+
+        await client.send_message(SUDO_ID, report_text)
+    except Exception as e:
+        print(f"⚠️ ارسال گزارش به سودو ناموفق بود: {e}")
 
     # ✅ برو بیرون
     if text == "برو بیرون":
