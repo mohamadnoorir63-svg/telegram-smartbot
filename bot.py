@@ -1,58 +1,56 @@
 import os
-from pyrogram import Client, filters
-from pytgcalls import PyTgCalls, idle
-from pytgcalls.types.input_stream import AudioPiped
 import yt_dlp
+from pyrogram import Client, filters
 
-# ---------------- تنظیمات ----------------
+# ---------- تنظیمات ----------
 API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH")
+API_HASH = os.getenv("API_HASH"))
 SESSION_STRING = os.getenv("SESSION_STRING")
 
-# ساخت کلاینت و اتصال صوتی
-app = Client("music_bot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
-call = PyTgCalls(app)
+# ساخت یوزربات
+app = Client("music_userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 
-# ---------------- پخش موزیک ----------------
-@app.on_message(filters.command("play", prefixes=["/"]))
-async def play_music(client, message):
-    if len(message.command) < 2:
-        await message.reply_text("🎵 لطفاً نام آهنگ یا لینک یوتیوب رو بعد از /play بنویس.")
-        return
+# ---------- تابع دانلود آهنگ ----------
+def download_song(query):
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': 'song.%(ext)s',
+        'noplaylist': True,
+        'quiet': True,
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',  # کیفیت خوب
+        }],
+        'default_search': 'ytsearch',
+    }
 
-    query = " ".join(message.command[1:])
-    msg = await message.reply_text(f"🎧 در حال جستجو برای: {query}")
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(query, download=True)
+        filename = ydl.prepare_filename(info)
+        mp3_path = os.path.splitext(filename)[0] + ".mp3"
+        return mp3_path, info.get("title", "بدون عنوان")
 
-    try:
-        ydl_opts = {"format": "bestaudio/best", "quiet": True}
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"ytsearch:{query}", download=False)["entries"][0]
-            url = info["url"]
-            title = info["title"]
+# ---------- پاسخ به پیام‌هایی با آهنگ یا musik ----------
+@app.on_message(filters.text & ~filters.edited)
+async def handle_music_request(client, message):
+    text = message.text.lower().strip()
 
-        chat_id = message.chat.id
-        await call.join_group_call(chat_id, AudioPiped(url))
-        await msg.edit_text(f"▶️ پخش: **{title}**")
+    if text.startswith("آهنگ") or text.startswith("musik"):
+        query = text.replace("آهنگ", "").replace("musik", "").strip()
+        if not query:
+            await message.reply_text("🎵 لطفاً بعد از کلمه آهنگ یا musik اسم آهنگ رو بنویس.")
+            return
 
-    except Exception as e:
-        await msg.edit_text(f"❌ خطا در پخش: {e}")
+        await message.reply_text("⏳ دارم دنبالش می‌گردم، صبر کن...")
 
-# ---------------- توقف پخش ----------------
-@app.on_message(filters.command("stop", prefixes=["/"]))
-async def stop_music(client, message):
-    try:
-        await call.leave_group_call(message.chat.id)
-        await message.reply_text("⏹ پخش متوقف شد.")
-    except Exception as e:
-        await message.reply_text(f"⚠️ خطا در توقف: {e}")
+        try:
+            path, title = download_song(query)
+            await message.reply_audio(audio=path, caption=f"🎧 {title}")
+            os.remove(path)
+        except Exception as e:
+            await message.reply_text(f"❌ خطا در دانلود آهنگ:\n`{e}`")
 
-# ---------------- شروع ----------------
-@call.on_stream_end()
-async def on_end(_, update):
-    chat_id = update.chat_id
-    await call.leave_group_call(chat_id)
-
-print("🎤 MusicBot gestartet!")
-app.start()
-call.start()
-idle()
+# ---------- شروع ----------
+print("🎶 Music downloader userbot started.")
+app.run()
