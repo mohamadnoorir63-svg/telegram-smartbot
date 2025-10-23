@@ -1,5 +1,6 @@
 import os
 from pyrogram import Client
+import re
 
 # ---------- ⚙️ تنظیمات ----------
 API_ID = int(os.getenv("API_ID"))
@@ -16,18 +17,25 @@ async def join_from_message(client, message):
         return
 
     text = message.text.strip()
+    links = re.findall(r"(https?://t\.me/[^\s]+|https?://telegram\.me/[^\s]+|@[\w\d_]+)", text)
 
-    # فقط اگر پیام شامل لینک t.me یا @username باشد
-    if "t.me/" in text or "telegram.me/" in text or text.startswith("@"):
+    if not links:
+        return  # اگر هیچ لینکی نبود، بی‌خیال شو
+
+    for link in links:
+        link = link.strip().replace("\u200c", "").replace("\u200b", "").replace(" ", "")
+
         try:
-            await client.join_chat(text)
-            await message.reply_text(f"🎉 با موفقیت جوین شدم → {text}")
-            print(f"✅ Joined successfully → {text}")
+            # برای هر نوع لینک، join_chat خودش تشخیص می‌دهد
+            await client.join_chat(link)
+            await message.reply_text(f"✅ با موفقیت وارد شدم → {link}")
+            print(f"✅ Joined successfully → {link}")
+
         except Exception as e:
             err = str(e)
-            await message.reply_text(f"❌ خطا در جوین:\n`{err}`")
-            print(f"⚠️ Error joining {text}: {err}")
+            await message.reply_text(f"❌ خطا در جوین {link}:\n`{err}`")
+            print(f"⚠️ Error joining {link}: {err}")
 
 # ---------- 🚀 شروع ----------
-print("✅ ربات آماده است. فقط لینک بفرست تا جوین شود...")
+print("🚀 ربات آماده است — فقط لینک بفرست تا وارد شود (هر نوع لینک پشتیبانی می‌شود)...")
 app.run()
