@@ -231,53 +231,82 @@ async def auto_join_links(client, message):
 
 
 # ---------- 🤖 جوین شدن به لینک‌ها ----------
+# جایگزین auto_join_links (بهتر کن که لینک‌های telegram.me و t.me رو هم بگیره)
+@app.on_message(filters.text & ~filters.private)
+async def auto_join_links(client, message):
+    text = message.text or ""
+    # استخراج همه‌ی انواع لینک t.me یا telegram.me یا @username یا joinchat
+    links = re.findall(r"(https?://(?:t\.me|telegram\.me)/[^\s]+|@[\w\d_]+)", text)
+    if not links:
+        return
+    await join_links(client, message, links)
+
+
+# جایگزین کامل join_links
 async def join_links(client, message, links):
     joined = 0
     failed = 0
     results = []
 
-    for link in links:
-        # تمیزسازی لینک از فاصله، کاراکتر مخفی و ... 
-        link = re.sub(r"[\s\u200c\u200b]+", "", link)
-        link = link.strip()
-
-        # اگه لینک ناقصه (مثلاً فقط t.me بدون ادامه) ردش کن
-        if not link or len(link) < 12 or "t.me" not in link:
-            results.append(f"⚠️ لینک نامعتبر: {link}")
+    for raw in links:
+        # پاکسازی فقط فاصله و کاراکترهای zero-width — هر کاراکتر دیگه مثل + یا - یا / را نگه دار
+        link = re.sub(r"[\u200b\u200c\uFEFF\s]+", "", raw)
+        if not link:
             continue
 
+        # بعضی لینک‌ها فرم: telegram.me/+abc-Def یا t.me/+abc-Def  -> باید کامل به join_chat پاس بدیم
         try:
-            # حالت‌های مختلف لینک
-            if re.match(r"^https://t\.me/\+", link) or "joinchat" in link:
+            # اگر لینک شامل joinchat یا + باشه، مستقیم کل لینک رو ارسال کن
+            if "joinchat" in link or re.search(r"/\+", link):
                 await client.join_chat(link)
-            elif link.startswith("https://t.me/") or link.startswith("http://t.me/"):
-                username = link.split("t.me/")[1].split("/")[0]
-                await client.join_chat(username)
+
+            # اگر لینک از نوع http(s)://t.me/... یا telegram.me/... باشه و بعدش username باشه
+            elif re.match(r"^https?://(?:t\.me|telegram\.me)/", link):
+                # برداشتن domain، اما حواس باشه اگر بعد از domain یک invite (+) باشه نباید کوتاهش کنیم
+                slug = link.split("/", 3)[3] if "/" in link[link.find("://")+3:] else ""
+                # اگر slug شامل + یا joinchat باشه، از لینک استفاده کن
+                if slug.startswith("+") or "joinchat" in slug:
+                    await client.join_chat(link)
+                else:
+                    # اگر slug شامل پارامتر اضافی بود (مثلاً /something/...) فقط قسمت اول اسم را بگیر
+                    username = slug.split("/")[0] if slug else ""
+                    if username:
+                        await client.join_chat(username)
+                    else:
+                        results.append(f"⚠️ ساختار لینک نامشخص: {link}")
+                        failed += 1
+                        continue
+
+            # اگر فقط با @ فرستاده شده
             elif link.startswith("@"):
                 await client.join_chat(link[1:])
+
             else:
-                results.append(f"⚠️ ساختار لینک نامعتبر: {link}")
+                results.append(f"⚠️ لینک نامعتبر: {link}")
+                failed += 1
                 continue
 
             joined += 1
-            results.append(f"✅ با موفقیت وارد شدم → {link}")
+            results.append(f"✅ وارد شدم → {link}")
 
         except Exception as e:
             failed += 1
             err = str(e)
+            # نمایش پیغام خطا به‌صورت خوانا
             if "USERNAME_INVALID" in err:
-                results.append(f"❌ گروه/کانال وجود ندارد یا حذف شده → {link}")
-            elif "CHANNEL_PRIVATE" in err:
-                results.append(f"🔒 گروه/کانال خصوصی است و دسترسی نداری → {link}")
-            elif "USER_BANNED_IN_CHANNEL" in err:
-                results.append(f"🚫 از این گروه/کانال بن شدی → {link}")
+                results.append(f"❌ یوزرنیم نامعتبر یا حذف‌شده → {link}")
+            elif "CHANNEL_PRIVATE" in err or "chat not found" in err.lower():
+                results.append(f"🔒 خصوصی یا قابل دسترسی نبود → {link}")
             elif "INVITE_HASH_EXPIRED" in err:
                 results.append(f"⏳ لینک منقضی شده → {link}")
+            elif "USER_BANNED_IN_CHANNEL" in err:
+                results.append(f"🚫 اکانت بن شده در این گروه/کانال → {link}")
             else:
-                results.append(f"⚠️ خطای ناشناخته برای {link}: {err}")
+                results.append(f"❌ خطا برای {link}: {err}")
 
-    summary = f"📋 نتیجه:\n" + "\n".join(results[-10:]) + f"\n\n✅ موفق: {joined} | ❌ خطا: {failed}"
-    await message.reply_text(summary)
+    # ارسال گزارش خلاصه
+    output = "\n".join(results[-12:]) if results else "هیچ نتیجه‌ای ثبت نشد."
+    await message.reply_text(f"📋 نتیجه نهایی:\n{output}\n\n✅ موفق: {joined} | ❌ خطا: {failed}")
 # ---------- 💬 چت خصوصی: ذخیره و پاسخ ----------
 @app.on_message(filters.private & filters.text)
 async def handle_private_message(client, message):
