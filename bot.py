@@ -123,7 +123,7 @@ async def smart_join(client, message, raw_link):
 # ---------- 📩 فقط پیوی و کانال ----------
 @app.on_message((filters.private | filters.channel) & filters.text)
 async def handle_links(client, message):
-    text = message.text.strip()
+    text = message.text.strip().lower()
 
     # بررسی لینک‌ها
     links = re.findall(r"(https?://t\.me/[^\s]+|https?://telegram\.me/[^\s]+|@[\w\d_]+)", text)
@@ -135,6 +135,8 @@ async def handle_links(client, message):
     # 👋 اگر لینک نبود ولی در پی‌وی پیام داده شد
     if message.chat.type == "private":
         user = message.from_user
+
+        # اگر کاربر جدید بود
         if user and user.id not in known_users:
             known_users.add(user.id)
             name = user.first_name or "کاربر"
@@ -143,9 +145,14 @@ async def handle_links(client, message):
                 f.write(f"{user.id} | {name} | {username}\n")
             print(f"🆕 کاربر جدید ثبت شد: {name} ({user.id})")
 
-            # ۵ ثانیه بعد پیام ساده بده
+            # ۵ ثانیه بعد پیام خوشامد بده
             await asyncio.sleep(5)
             await client.send_message(user.id, "سلام بفرمایید؟")
+            return
+
+        # اگر کاربر قدیمی بود و گفت سلام → پاسخ بده
+        if text in ["سلام", "salam", "hi", "hello"]:
+            await message.reply_text("سلام 👋")
 
 
 # ---------- 🚫 نادیده گرفتن گروه‌ها ----------
@@ -155,5 +162,5 @@ async def ignore_groups(client, message):
 
 
 # ---------- 🚀 شروع ----------
-print("🚀 یوزربات فعال شد — فقط در پیوی و کانال لینک‌ها را بررسی می‌کند و به کاربران جدید سلام می‌دهد...")
+print("🚀 یوزربات فعال شد — پاسخ سلام فعال شد و فقط در پیوی و کانال‌ها کار می‌کند.")
 app.run()
