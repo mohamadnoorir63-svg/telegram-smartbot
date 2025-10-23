@@ -37,7 +37,8 @@ def download_song(query):
         return mp3_path, title, length
 
 # ---------- 💬 پاسخ به درخواست آهنگ ----------
-@app.on_message(filters.text & ~filters.edited)
+# ---------- 💬 پاسخ به درخواست آهنگ ----------
+@app.on_message(filters.text)
 async def handle_music(client, message):
     text = message.text.lower().strip()
 
