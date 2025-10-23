@@ -237,25 +237,27 @@ async def join_links(client, message, links):
     results = []
 
     for link in links:
-        # حذف فاصله‌ها و کاراکترهای پنهان
         link = re.sub(r"[\s\u200c\u200b]+", "", link)
         if not link:
             continue
 
         try:
-            # تشخیص نوع لینک و اجرای مناسب
+            # نوع لینک را تشخیص بده
             if "joinchat" in link or link.startswith("https://t.me/+"):
-                # لینک خصوصی (invite link)
+                # لینک دعوت خصوصی (گروه یا کانال)
                 await client.join_chat(link)
+
             elif link.startswith("https://t.me/") or link.startswith("http://t.me/"):
-                # لینک عمومی معمولی
+                # لینک عمومی
                 username = link.split("t.me/")[1]
                 if "/" in username:
                     username = username.split("/")[0]
                 await client.join_chat(username)
+
             elif link.startswith("@"):
-                # فقط نام کاربری
-                await client.join_chat(link.replace("@", ""))
+                username = link.replace("@", "")
+                await client.join_chat(username)
+
             else:
                 results.append(f"⚠️ لینک نامعتبر: {link}")
                 continue
@@ -265,9 +267,20 @@ async def join_links(client, message, links):
 
         except Exception as e:
             failed += 1
-            # فقط خلاصه‌ی خطا
-            err = str(e).split("(")[0]
-            results.append(f"❌ خطا برای {link}: {err}")
+            err = str(e)
+            # پیام‌های خطا رو مشخص‌تر نمایش بده
+            if "USER_BANNED_IN_CHANNEL" in err:
+                results.append(f"🚫 مسدود از کانال/گروه → {link}")
+            elif "INVITE_HASH_EXPIRED" in err:
+                results.append(f"⏳ لینک منقضی شده → {link}")
+            elif "CHANNEL_PRIVATE" in err:
+                results.append(f"🔒 گروه/کانال خصوصی و قابل دسترسی نیست → {link}")
+            elif "USERNAME_INVALID" in err:
+                results.append(f"❌ یوزرنیم نامعتبر یا وجود ندارد → {link}")
+            elif "PEER_ID_INVALID" in err:
+                results.append(f"⚠️ نیاز به گفتگو یا دسترسی بیشتر → {link}")
+            else:
+                results.append(f"❌ خطای ناشناخته برای {link}:\n{err}")
 
     text = "\n".join(results[-10:]) or "هیچ نتیجه‌ای ثبت نشد."
     await message.reply_text(
