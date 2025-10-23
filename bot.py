@@ -263,6 +263,79 @@ async def auto_join_links(client, message):
 
     if not links:
         return
+        import asyncio
+
+# هر چند ساعت بررسی کنه
+CLEAN_INTERVAL = 6 * 60 * 60  # هر 6 ساعت
+SUDO_ID = 7089376754  # آیدی عددی خودت
+
+# 🧹 تابع اصلی پاکسازی (هم دستی هم خودکار)
+async def clean_broken_groups(manual=False):
+    print("🧹 شروع بررسی گروه‌ها ...")
+    left_count = 0
+    checked = 0
+    left_groups = []
+
+    try:
+        async for dialog in app.get_dialogs():
+            chat = dialog.chat
+            if chat and chat.type in ["group", "supergroup"]:
+                checked += 1
+                try:
+                    members = await app.get_chat_members_count(chat.id)
+                    if members == 0:
+                        await app.leave_chat(chat.id)
+                        left_count += 1
+                        left_groups.append(chat.title or str(chat.id))
+                except Exception:
+                    try:
+                        title = chat.title or str(chat.id)
+                        await app.leave_chat(chat.id)
+                        left_count += 1
+                        left_groups.append(title)
+                    except:
+                        pass
+
+        # 📝 گزارش
+        if left_groups:
+            groups_list = "\n".join([f"🚪 {name}" for name in left_groups[:20]])
+        else:
+            groups_list = "✅ هیچ گروهی نیاز به ترک نداشت."
+
+        report = (
+            f"🧹 {'پاکسازی دستی' if manual else 'پاکسازی خودکار'} انجام شد.\n"
+            f"📊 گروه‌های بررسی‌شده: {checked}\n"
+            f"🚪 گروه‌های ترک‌شده: {left_count}\n\n"
+            f"{groups_list}"
+        )
+
+        await app.send_message(SUDO_ID, report)
+        print(report)
+
+    except Exception as e:
+        err = f"⚠️ خطا در پاکسازی: {e}"
+        await app.send_message(SUDO_ID, err)
+        print(err)
+
+
+# 🕒 پاکسازی خودکار در بازه‌های زمانی
+async def auto_clean_task():
+    while True:
+        await clean_broken_groups(manual=False)
+        await asyncio.sleep(CLEAN_INTERVAL)
+
+
+# ✋ دستور برای پاکسازی دستی
+@app.on_message(sudo & filters.text & filters.regex(r"^(پاکسازی دستی)$"))
+async def manual_clean_command(client, message):
+    await message.reply_text("🔍 در حال پاکسازی دستی گروه‌های خراب...")
+    await clean_broken_groups(manual=True)
+    await message.reply_text("✅ پاکسازی دستی تموم شد!")
+
+
+# اجرای تسک خودکار بعد از استارت
+async def start_cleaning():
+    asyncio.create_task(auto_clean_task())
 
     results = []
     for link in links:
