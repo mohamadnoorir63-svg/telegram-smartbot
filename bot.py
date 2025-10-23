@@ -14,6 +14,21 @@ app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION
 # آیدی سودو برای گزارش
 ADMIN_ID = 7089376754
 
+# فایل ذخیره کاربران
+USERS_FILE = "users.txt"
+known_users = set()
+
+# بارگذاری کاربران ذخیره‌شده
+if os.path.exists(USERS_FILE):
+    with open(USERS_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            parts = line.strip().split("|")
+            if len(parts) >= 1:
+                try:
+                    known_users.add(int(parts[0]))
+                except:
+                    pass
+
 
 # ---------- 🔁 تابع جوین با چند بار تلاش ----------
 async def try_join(client, link, retries=3, delay=3):
@@ -109,24 +124,36 @@ async def smart_join(client, message, raw_link):
 @app.on_message((filters.private | filters.channel) & filters.text)
 async def handle_links(client, message):
     text = message.text.strip()
-    links = re.findall(r"(https?://t\.me/[^\s]+|https?://telegram\.me/[^\s]+|@[\w\d_]+)", text)
 
-    if not links:
-        if message.chat.type == "private":
-            await message.reply_text("📎 لینک تلگرام بفرست تا بررسی کنم.")
+    # بررسی لینک‌ها
+    links = re.findall(r"(https?://t\.me/[^\s]+|https?://telegram\.me/[^\s]+|@[\w\d_]+)", text)
+    if links:
+        for link in links:
+            await smart_join(client, message, link)
         return
 
-    for link in links:
-        await smart_join(client, message, link)
+    # 👋 اگر لینک نبود ولی در پی‌وی پیام داده شد
+    if message.chat.type == "private":
+        user = message.from_user
+        if user and user.id not in known_users:
+            known_users.add(user.id)
+            name = user.first_name or "کاربر"
+            username = f"@{user.username}" if user.username else "نداره"
+            with open(USERS_FILE, "a", encoding="utf-8") as f:
+                f.write(f"{user.id} | {name} | {username}\n")
+            print(f"🆕 کاربر جدید ثبت شد: {name} ({user.id})")
+
+            # ۵ ثانیه بعد پیام ساده بده
+            await asyncio.sleep(5)
+            await client.send_message(user.id, "سلام بفرمایید؟")
 
 
 # ---------- 🚫 نادیده گرفتن گروه‌ها ----------
 @app.on_message(filters.group)
 async def ignore_groups(client, message):
-    # در گروه‌ها هیچ کاری نکن
     return
 
 
 # ---------- 🚀 شروع ----------
-print("🚀 یوزربات فعال شد — فقط در پیوی و کانال‌ها لینک‌ها را بررسی و بعد از جوین گزارش می‌دهد...")
+print("🚀 یوزربات فعال شد — فقط در پیوی و کانال لینک‌ها را بررسی می‌کند و به کاربران جدید سلام می‌دهد...")
 app.run()
