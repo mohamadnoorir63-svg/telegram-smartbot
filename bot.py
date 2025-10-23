@@ -12,6 +12,7 @@ API_HASH = os.getenv("API_HASH")
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH)
 call = PyTgCalls(app)
 
+# 📥 دانلود آهنگ از یوتیوب
 async def download_audio(query):
     ydl_opts = {
         "format": "bestaudio/best",
@@ -24,6 +25,7 @@ async def download_audio(query):
         filename = ydl.prepare_filename(info)
     return filename, info["title"]
 
+# 🎧 پخش آهنگ
 @app.on_message(filters.text & filters.group)
 async def play_music(client, message):
     text = message.text.lower().strip()
@@ -61,6 +63,7 @@ async def play_music(client, message):
     except Exception as e:
         await m.edit(f"❌ خطا در پخش آهنگ:\n`{e}`")
 
+# 🎚 کنترل دکمه‌ها
 @app.on_callback_query()
 async def callbacks(client, callback_query):
     chat_id = callback_query.message.chat.id
