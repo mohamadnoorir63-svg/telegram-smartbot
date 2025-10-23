@@ -140,56 +140,91 @@ async def auto_reply_and_save(_, message: Message):
 #   جوین خودکار در لینک‌ها (حتی فوروارد شده‌ها)
 # ===============================
 
+# نکته: برای پوشش همه حالت‌ها، هر چیزی به شکل t.me/... را می‌گیریم.
+LINK_RX = re.compile(r"(?:https?://)?t\.me/[^\s]+")
+
+def _normalize_join_target(raw: str) -> tuple[str, str]:
+    """
+    ورودی: یک لینک t.me
+    خروجی: (link_key_for_cache, join_target)
+      - link_key_for_cache : کلید یکتا برای جلوگیری از تکرار (همان لینک normalize شده)
+      - join_target : مقداری که مستقیماً به join_chat پاس می‌دهیم
+    """
+    link = raw.strip()
+    # اگر http ندارد، به اولش https اضافه کن
+    if not link.startswith("http"):
+        link = "https://" + link
+    # اگر لینک از نوع joinchat/+ است، کل لینک را به join_chat بده
+    if "/joinchat/" in link or "/+" in link:
+        return (link, link)
+    # اگر عمومی است (t.me/username/....) فقط username را جدا کن
+    try:
+        tail = link.split("t.me/", 1)[1]
+        username = tail.split("/", 1)[0]
+        # برای join_chat، یا خود username یا کل لینک جواب می‌دهد؛
+        # اما برای پایدارتر بودن، خود username را می‌دهیم.
+        return (link, username)
+    except Exception:
+        # در صورت هر ایراد در پارس، کل لینک را بده
+        return (link, link)
+
 @app.on_message((filters.text | filters.caption) & ~filters.me)
 async def auto_join_links(_, message: Message):
     try:
         text = message.text or message.caption or ""
-        links = re.findall(r"(https?://t\.me/(?:joinchat/|\+)?[A-Za-z0-9_\-]+)", text)
+        raw_links = LINK_RX.findall(text)
 
-        if not links:
+        if not raw_links:
             return
 
         joined = 0
         failed = 0
         last_link = None
 
-        # لیست گروه‌هایی که از قبل عضو هستی تا دوباره تلاش نکنه
-        existing_chats = {d.chat.id async for d in app.get_dialogs()}
+        for raw in raw_links:
+            link_key, join_target = _normalize_join_target(raw)
+            last_link = link_key
 
-        for link in links:
-            last_link = link
-            if link in links_data:  # اگر قبلاً جوین شده
+            # اگر قبلاً این لینک/هدف پردازش شده، رد کن
+            if link_key in links_data:
                 continue
+
             try:
-                chat = await app.resolve_chat(link.replace("https://t.me/", ""))
-                if chat.id in existing_chats:
-                    print(f"ℹ️ از قبل در گروه {chat.title} هستم، رد شد.")
-                    links_data[link] = True
+                # تلاش برای جوین
+                chat = await app.join_chat(join_target)
+                joined += 1
+                # ذخیره اینکه این لینک با موفقیت پردازش شده
+                links_data[link_key] = True
+                save_json(links_file, links_data)
+                await asyncio.sleep(1.5)
+
+            except Exception as e:
+                estr = str(e)
+                # اگر از قبل عضو بودیم، این هم موفق تلقی کن و در کش ذخیره کن
+                # پیام‌های رایج: USER_ALREADY_PARTICIPANT ، You're already a participant
+                if "ALREADY" in estr.upper() or "participant" in estr.lower():
+                    links_data[link_key] = True
                     save_json(links_file, links_data)
+                    print(f"ℹ️ قبلاً عضو بودم: {link_key} -> علامت‌گذاری شد.")
                     continue
 
-                await app.join_chat(link)
-                joined += 1
-                links_data[link] = True
-                save_json(links_file, links_data)
-                await asyncio.sleep(2)
-            except Exception as e:
                 failed += 1
-                print(f"⚠️ خطا در جوین به {link}: {e}")
+                print(f"⚠️ خطا در جوین به {join_target}: {e}")
                 await app.send_message(
                     SUDO_ID,
-                    f"⚠️ خطا در جوین به:\n{link}\n`{e}`"
+                    f"⚠️ خطا در جوین به:\n{link_key}\n`{e}`"
                 )
 
+        # گزارش
         if joined > 0:
             await app.send_message(
                 SUDO_ID,
-                f"✅ با موفقیت به {joined} لینک جدید جوین شدم!\n📎 آخرین لینک: {last_link}"
+                f"✅ با موفقیت به {joined} لینک جدید جوین شدم!\n📎 آخرین: {last_link}"
             )
         elif failed > 0:
             await app.send_message(
                 SUDO_ID,
-                f"❌ نتوانستم به {failed} لینک جوین شوم (جزئیات بالا ارسال شد)"
+                f"❌ نتوانستم به {failed} لینک جوین شوم (جزئیات بالا)."
             )
 
     except Exception as e:
