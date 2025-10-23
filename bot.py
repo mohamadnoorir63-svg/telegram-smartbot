@@ -1,6 +1,6 @@
 from pyrogram import Client, filters
-from pytgcalls import GroupCallFactory
-from pytgcalls.types.input_stream import InputAudioPiped
+from pytgcalls import PyTgCalls, idle
+from pytgcalls.types import AudioPiped
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import yt_dlp
 import asyncio
@@ -10,9 +10,8 @@ API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH)
-call = GroupCallFactory(app).get_file_group_call()
+call = PyTgCalls(app)
 
-# 📥 دانلود آهنگ
 async def download_audio(query):
     ydl_opts = {
         "format": "bestaudio/best",
@@ -25,7 +24,6 @@ async def download_audio(query):
         filename = ydl.prepare_filename(info)
     return filename, info["title"]
 
-# 🎧 پخش آهنگ
 @app.on_message(filters.text & filters.group)
 async def play_music(client, message):
     text = message.text.lower().strip()
@@ -45,10 +43,7 @@ async def play_music(client, message):
 
     try:
         file_path, title = await asyncio.to_thread(download_audio, query)
-        await call.join_group_call(
-            message.chat.id,
-            InputAudioPiped(file_path)
-        )
+        await call.join_group_call(message.chat.id, AudioPiped(file_path))
         await m.delete()
 
         buttons = InlineKeyboardMarkup([
@@ -72,14 +67,16 @@ async def callbacks(client, callback_query):
     data = callback_query.data
 
     if data == "pause":
-        await call.pause(chat_id)
+        await call.pause_stream(chat_id)
         await callback_query.answer("⏸ آهنگ متوقف شد.")
     elif data == "resume":
-        await call.resume(chat_id)
+        await call.resume_stream(chat_id)
         await callback_query.answer("▶️ ادامه پخش.")
     elif data == "leave":
         await call.leave_group_call(chat_id)
         await callback_query.answer("❌ ربات از ویس خارج شد.")
 
 print("🎧 VoiceChat Music Bot Online...")
-app.run()
+app.start()
+call.start()
+idle()
