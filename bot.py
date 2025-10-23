@@ -194,16 +194,18 @@ async def auto_join_links(_, message: Message):
 # ===============================
 #     آمار کامل (Stats)
 # ===============================
-
-@app.on_message(filters.command("stats"))
+@app.on_message(filters.command("stats") & filters.user(SUDO_ID))
 async def stats(_, message: Message):
     try:
-        # گرفتن اطلاعات فرستنده و مدیر
-        sender_id = message.from_user.id if message.from_user else None
-        me = await app.get_me()  # گرفتن اطلاعات اکانت فعلی
+        # فقط در پیوی اجرا شه (نه گروه)
+        if message.chat.type != "private":
+            return await message.reply_text("⚠️ لطفاً این دستور را فقط در پیوی ارسال کنید.")
+
+        # گرفتن اطلاعات مدیر
+        me = await app.get_me()
         sudo_name = f"{me.first_name or ''} {me.last_name or ''}".strip()
 
-        # جمع‌آوری آمار چت‌ها
+        # گرفتن آمار چت‌ها
         dialogs = [d async for d in app.get_dialogs()]
         groups = sum(1 for d in dialogs if d.chat.type == "group")
         privates = sum(1 for d in dialogs if d.chat.type == "private")
@@ -212,9 +214,8 @@ async def stats(_, message: Message):
         total_users = len(users_data)
         total_links = len(links_data)
 
-        # ساخت خروجی نهایی
         text = f"""
-📊 **آمار ربات:**
+📊 **آمار کامل ربات:**
 
 👤 کاربران خصوصی: `{privates}`
 👥 گروه‌ها: `{groups}`
@@ -222,13 +223,16 @@ async def stats(_, message: Message):
 💾 کاربران ذخیره‌شده: `{total_users}`
 🔗 لینک‌های جوین‌شده: `{total_links}`
 
-🆔 آیدی فرستنده: `{sender_id}`
 👑 مدیر فعلی سشن: `{sudo_name}` (`{me.id}`)
 ⚙️ مدیریت تنظیم‌شده در ENV: `{SUDO_ID}`
 """
+        print("✅ دستور /stats اجرا شد — آمار ارسال گردید.")
         await message.reply_text(text)
+
     except Exception as e:
+        print(f"⚠️ خطا در /stats: {e}")
         await message.reply_text(f"⚠️ خطا در آمار:\n`{e}`")
+
 # ===============================
 #     اجرای ربات
 # ===============================
