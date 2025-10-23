@@ -1,236 +1,186 @@
-import os, re, time, asyncio
+import os
+import asyncio
+import random
+import time
 from pyrogram import Client, filters
 
-# ====== ⚙️ Grundeinstellungen ======
+# ---------- ⚙️ تنظیمات ----------
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 SESSION_STRING = os.getenv("SESSION_STRING")
+SUDO_ID = 7089376754  # آیدی عددی خودت
 
-try:
-    SUDO_ID = int(os.getenv("SUDO_ID"))
-except:
-    SUDO_ID = 7089376754  # Standard-ID
-
-# ====== 📁 Datei-Pfade ======
 USERS_FILE = "users.txt"
-GREETED_FILE = "greeted.txt"
-GROUPS_FILE = "groups.txt"
+known_users = set()
+if os.path.exists(USERS_FILE):
+    with open(USERS_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                user_id = line.split("|")[0].strip()
+                known_users.add(user_id)
 
-known_users, greeted_users, joined_groups = set(), set(), set()
-message_count = 0
-left_groups_counter = 0
 start_time = time.time()
-waiting_for_links = {}
+message_count = 0
+joined_groups = set()
+left_groups = 0
 
-# ====== Hilfsfunktionen ======
-def load_lines(path):
-    if not os.path.exists(path): return []
-    with open(path, "r", encoding="utf-8") as f:
-        return [l.strip() for l in f if l.strip()]
+# ---------- 🤖 ساخت یوزربات ----------
+app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 
-for l in load_lines(USERS_FILE):
-    try: known_users.add(l.split("|")[0].strip())
-    except: pass
-for l in load_lines(GREETED_FILE): greeted_users.add(l)
-for l in load_lines(GROUPS_FILE): joined_groups.add(l)
+# ---------- 🎯 فیلتر مخصوص سودو ----------
+def is_sudo(_, __, message):
+    return message.from_user and message.from_user.id == SUDO_ID
 
-# ====== Client ======
-app = Client("SaraUserbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
+sudo = filters.create(is_sudo)
 
-# ====== Zeitformat ======
-def uptime_text(seconds):
-    s = int(seconds)
-    m = s // 60
-    h = m // 60
-    m = m % 60
-    if h: return f"{h} Stunden, {m} Minuten"
-    if m: return f"{m} Minuten"
-    return f"{s} Sekunden"
+# ---------- 🟢 اعلام روشن بودن ----------
+@app.on_message(filters.outgoing & filters.regex("^/start$"))
+async def start_message(client, message):
+    await message.reply_text("✅ سارا روشنه و آماده‌ست!")
 
-# ====== Sudo-Erkennung ======
-def is_sudo(msg):
-    return (
-        getattr(msg, "outgoing", False)
-        or (msg.from_user and msg.from_user.id == SUDO_ID)
-    )
-
-# ====== Gruppenzählung ======
-async def count_groups(client):
-    count = 0
-    async for d in client.get_dialogs():
-        if d.chat and d.chat.type in ("group", "supergroup"):
-            count += 1
-    return count
-
-# ====== Private Nachrichten (Speichern & Begrüßung) ======
+# ---------- 📥 ذخیره خودکار کاربران جدید ----------
 @app.on_message(filters.private & filters.text)
-async def private_message(client, message):
+async def auto_save_user(client, message):
     global message_count
     message_count += 1
     user = message.from_user
-    if not user: return
+    if not user:
+        return
+    user_id = str(user.id)
+    name = user.first_name or "ناشناس"
+    username = f"@{user.username}" if user.username else "نداره"
 
-    uid = str(user.id)
-    name = user.first_name or "Unbekannt"
-    username = f"@{user.username}" if user.username else "—"
-
-    # Speichern des Benutzers
-    if uid not in known_users:
-        known_users.add(uid)
+    if user_id not in known_users:
+        known_users.add(user_id)
         with open(USERS_FILE, "a", encoding="utf-8") as f:
-            f.write(f"{uid} | {name} | {username}\n")
-        print(f"🆕 Neuer Benutzer: {name} ({uid})")
+            f.write(f"{user_id} | {name} | {username}\n")
+        print(f"🆕 کاربر جدید ثبت شد: {name} ({user_id})")
+        await message.reply_text(f"سلام {name} 🌹\nخوش اومدی 💖")
 
-    # Persischer Gruß nur einmal
+    # پاسخ به سلام فقط یک‌بار
+    if message.text.lower() in ["سلام", "salam", "hi", "hello"]:
+        await message.reply_text("سلام 😄 خوش اومدی 💬")
+
+# ---------- 🟢 دستورات فارسی برای سودو ----------
+waiting_for_links = {}
+
+@app.on_message(sudo & filters.text)
+async def sara_commands(client, message):
+    global left_groups
     text = message.text.strip().lower()
-    if text in ["سلام", "salam", "hi", "hello", "hallo"] and uid not in greeted_users:
-        greeted_users.add(uid)
-        with open(GREETED_FILE, "a", encoding="utf-8") as f:
-            f.write(uid + "\n")
-        await message.reply_text("سلام 🌹 خوش اومدی 💬")
+    chat_id = message.chat.id
 
-# ====== Gruppen bereinigen ======
-async def clean_bad_groups(client, message=None):
-    global left_groups_counter
+    # 📎 بیا
+    if text == "بیا":
+        waiting_for_links[chat_id] = []
+        await message.reply_text("📎 لینک‌هاتو بفرست (هر کدوم در یک خط)\nوقتی تموم شد بنویس: پایان")
+        return
+
+    # ✅ پایان
+    if text == "پایان" and chat_id in waiting_for_links:
+        links = waiting_for_links.pop(chat_id)
+        if not links:
+            await message.reply_text("⚠️ هیچ لینکی دریافت نشد.")
+            return
+        await message.reply_text(f"🔍 دارم {len(links)} تا لینک رو بررسی می‌کنم...")
+        await join_links(client, message, links)
+        return
+
+    # 🚪 برو بیرون
+    if text == "برو بیرون":
+        try:
+            await client.leave_chat(chat_id)
+            await message.reply_text("🚪 از گروه خارج شدم.")
+            left_groups += 1
+        except Exception as e:
+            await message.reply_text(f"⚠️ خطا هنگام خروج: {e}")
+        return
+
+    # 📊 آمار
+    if text == "آمار":
+        uptime = round((time.time() - start_time) / 3600, 2)
+        await message.reply_text(
+            f"📊 گزارش خودکار سارا\n\n"
+            f"👥 کاربران ذخیره‌شده: {len(known_users)}\n"
+            f"💬 پیام‌های دریافتی: {message_count}\n"
+            f"👩‍👩‍👧 گروه‌های عضو شده: {len(joined_groups)}\n"
+            f"🚪 گروه‌های ترک‌شده: {left_groups}\n"
+            f"⏱ مدت فعالیت: {uptime} ساعت"
+        )
+        return
+
+    # 🧹 پاکسازی
+    if text == "پاکسازی":
+        await clean_broken_groups(client, message)
+        return
+
+    # ✳️ اضافه کردن لینک‌ها
+    if chat_id in waiting_for_links:
+        new_links = [line.strip() for line in text.splitlines() if line.strip()]
+        waiting_for_links[chat_id].extend(new_links)
+        await message.reply_text(f"✅ {len(new_links)} لینک جدید اضافه شد.")
+
+# ---------- 🤖 جوین لینک‌ها ----------
+async def join_links(client, message, links):
+    for link in links:
+        try:
+            if link.startswith("@"):
+                link = link.replace("@", "")
+            await client.join_chat(link)
+            joined_groups.add(link)
+            await message.reply_text(f"✅ عضو شدم → {link}")
+        except Exception as e:
+            await message.reply_text(f"❌ خطا برای {link}: {e}")
+
+# ---------- 🧹 پاکسازی گروه‌های خراب ----------
+async def clean_broken_groups(client, message):
+    global left_groups
     left = 0
-    checked = 0
     async for dialog in client.get_dialogs():
         chat = dialog.chat
-        if chat and chat.type in ("group", "supergroup"):
-            checked += 1
+        if chat and chat.type in ["group", "supergroup"]:
             try:
                 await client.get_chat_members_count(chat.id)
             except Exception:
                 try:
                     await client.leave_chat(chat.id)
                     left += 1
-                    left_groups_counter += 1
+                    left_groups += 1
                 except:
                     pass
+    await message.reply_text(f"🧹 پاکسازی انجام شد.\n🚪 از {left} گروه خارج شدم.")
 
-    msg = f"🧹 Überprüft: {checked}\n🚪 Verlassen: {left}"
-    if message:
-        await message.reply_text(msg)
-    else:
-        await client.send_message(SUDO_ID, msg)
-
-# ====== Beitritt zu Gruppen ======
-async def join_links(client, message, links):
-    joined = 0
-    failed = 0
-    results = []
-
-    for link in links:
-        try:
-            link = link.strip()
-            if link.startswith("@"):
-                link = link[1:]
-            await client.join_chat(link)
-            joined += 1
-            joined_groups.add(link)
-            with open(GROUPS_FILE, "a", encoding="utf-8") as f:
-                f.write(link + "\n")
-            results.append(f"✅ Beigetreten: {link}")
-        except Exception as e:
-            failed += 1
-            results.append(f"❌ {link} → {e}")
-
-    report = "\n".join(results[-30:]) or "—"
-    await message.reply_text(f"📋 Ergebnis:\n{report}\n\n✅ Erfolgreich: {joined} | ❌ Fehler: {failed}")
-
-# ====== Befehle (Deutsch) ======
-@app.on_message(filters.text)
-async def sara_commands(client, message):
-    if not is_sudo(message):
-        return
-
-    text = message.text.strip().lower()
-    cid = message.chat.id
-
-    # /ping
-    if text in ["/ping"]:
-        await message.reply_text("🟢 Ich bin online!")
-        return
-
-    # /beitreten
-    if text == "/beitreten":
-        waiting_for_links[cid] = []
-        await message.reply_text("📎 Sende die Links (jeder in einer neuen Zeile)\nSchreibe **/ende**, wenn du fertig bist.")
-        return
-
-    # /ende
-    if text == "/ende" and cid in waiting_for_links:
-        links = waiting_for_links.pop(cid)
-        if not links:
-            await message.reply_text("⚠️ Keine Links empfangen.")
-            return
-        await message.reply_text(f"🔍 Beitrete {len(links)} Gruppen...")
-        await join_links(client, message, links)
-        return
-
-    # /statistiken
-    if text == "/statistiken":
-        gcount = await count_groups(client)
-        await message.reply_text(
-            f"📊 Statistik:\n"
-            f"👥 Benutzer gespeichert: {len(known_users)}\n"
-            f"👩‍👩‍👧 Gruppen beigetreten: {gcount}\n"
-            f"⏱ Laufzeit: {uptime_text(time.time() - start_time)}"
-        )
-        return
-
-    # /bereinigen
-    if text == "/bereinigen":
-        await clean_bad_groups(client, message)
-        return
-
-    # Links empfangen
-    if cid in waiting_for_links:
-        new_links = [l.strip() for l in text.splitlines() if l.strip()]
-        waiting_for_links[cid].extend(new_links)
-        await message.reply_text(f"✅ {len(new_links)} neue Links hinzugefügt.")
-
-# ====== Automatischer Bericht ======
-async def hourly_report():
+# ---------- 🕒 گزارش خودکار هر ۱ ساعت ----------
+async def auto_report():
     while True:
         try:
-            gcount = await count_groups(app)
-            uptime = uptime_text(time.time() - start_time)
+            uptime = round((time.time() - start_time) / 3600, 2)
             text = (
-                "📊 Automatischer Bericht von Sara\n\n"
-                f"👥 Benutzer: {len(known_users)}\n"
-                f"💬 Nachrichten (privat): {message_count}\n"
-                f"👩‍👩‍👧 Gruppen: {gcount}\n"
-                f"🚪 Verlassen: {left_groups_counter}\n"
-                f"⏱ Laufzeit: {uptime}"
+                f"📊 گزارش خودکار سارا\n\n"
+                f"👥 کاربران ذخیره‌شده: {len(known_users)}\n"
+                f"💬 پیام‌های دریافتی: {message_count}\n"
+                f"👩‍👩‍👧 گروه‌های عضو شده: {len(joined_groups)}\n"
+                f"🚪 گروه‌های ترک‌شده: {left_groups}\n"
+                f"⏱ مدت فعالیت: {uptime} ساعت"
             )
             await app.send_message(SUDO_ID, text)
+            print("✅ گزارش ساعتی ارسال شد.")
         except Exception as e:
-            print("hourly report error:", e)
-        await asyncio.sleep(3600)  # jede Stunde
+            print(f"⚠️ خطا در ارسال گزارش: {e}")
+        await asyncio.sleep(3600)  # هر ۱ ساعت
 
-# ====== Start ======
-async def main_loop():
-    await app.start()
-    print("✅ Sara ist gestartet.")
-    try:
-        await app.send_message(SUDO_ID, "💖 Sara ist jetzt aktiv und bereit!")
-    except:
-        pass
-    asyncio.create_task(hourly_report())
-    await asyncio.Event().wait()
-
+# ---------- ♻️ ری‌استارت داخلی خودکار در صورت خطا ----------
 async def run_forever():
     while True:
         try:
-            await main_loop()
+            await app.start()
+            print("💖 سارا فعال شد و در حال اجراست...")
+            asyncio.create_task(auto_report())
+            await asyncio.Event().wait()
         except Exception as e:
-            print("⚠️ Fehler:", e)
-            try:
-                await app.send_message(SUDO_ID, "❌ Sara ist abgestürzt! Starte neu ...")
-            except:
-                pass
+            print(f"⚠️ خطای داخلی: {e}\n🔄 تلاش برای ری‌استارت دوباره...")
             await asyncio.sleep(10)
 
+# ---------- 🚀 شروع ----------
 if __name__ == "__main__":
     asyncio.run(run_forever())
