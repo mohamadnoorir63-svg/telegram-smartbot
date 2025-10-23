@@ -7,16 +7,15 @@ import os
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 SESSION_STRING = os.getenv("SESSION_STRING")
-SUDO_ID = int(os.getenv("SUDO_ID", 0))  # فقط ادمین اصلی اجازه دستور دادن داره
 
 app = Client(
-    name="userbot",
+    "userbot",
     api_id=API_ID,
     api_hash=API_HASH,
     session_string=SESSION_STRING
 )
 
-# 📥 دانلود آهنگ از یوتیوب
+# 📥 تابع دانلود آهنگ از یوتیوب
 async def download_audio(query):
     os.makedirs("downloads", exist_ok=True)
     ydl_opts = {
@@ -35,22 +34,17 @@ async def download_audio(query):
         filename = os.path.splitext(ydl.prepare_filename(info))[0] + ".mp3"
     return filename, info["title"]
 
-# 🎵 ارسال آهنگ (با یا بدون /)
+# 🎵 همه نوع دستور موزیک
 @app.on_message(filters.text & filters.group)
-async def send_music(client, message):
-    # فقط ادمین اصلی (SUDO_ID) بتونه دستور بده
-    if SUDO_ID and message.from_user and message.from_user.id != SUDO_ID:
-        return
-
-    text = message.text.lower().strip()
+async def music_handler(client, message):
+    text = message.text.strip().lower()
+    keywords = ["آهنگ ", "/آهنگ ", "music ", "/music ", "song ", "/song ", "musik ", "/musik "]
     query = None
 
-    if text.startswith("آهنگ "):
-        query = text[len("آهنگ "):].strip()
-    elif text.startswith("/music ") or text.startswith("music "):
-        query = text.split(" ", 1)[1].strip() if " " in text else None
-    elif text.startswith("/song ") or text.startswith("song "):
-        query = text.split(" ", 1)[1].strip() if " " in text else None
+    for key in keywords:
+        if text.startswith(key):
+            query = text[len(key):].strip()
+            break
 
     if not query:
         return
@@ -61,7 +55,7 @@ async def send_music(client, message):
         file_path, title = await asyncio.to_thread(download_audio, query)
         await message.reply_audio(
             audio=file_path,
-            caption=f"🎶 آهنگ مورد نظر شما:\n**{title}**",
+            caption=f"🎶 آهنگ شما آماده است:\n**{title}**",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("📺 پخش در یوتیوب", url=f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}")]
             ])
