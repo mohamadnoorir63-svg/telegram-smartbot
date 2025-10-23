@@ -4,11 +4,13 @@ import asyncio
 from pyrogram import Client, filters
 
 # ---------- ⚙️ تنظیمات ----------
+
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 SESSION_STRING = os.getenv("SESSION_STRING")
 
 # ---------- 📱 ساخت یوزربات ----------
+
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 
 # آیدی سودو برای گزارش
@@ -29,8 +31,8 @@ if os.path.exists(USERS_FILE):
                 except:
                     pass
 
-
 # ---------- 🔁 تابع جوین با چند بار تلاش ----------
+
 async def try_join(client, link, retries=3, delay=3):
     for attempt in range(1, retries + 1):
         try:
@@ -57,8 +59,8 @@ async def try_join(client, link, retries=3, delay=3):
                 raise e
     return False
 
-
 # ---------- 🧠 تابع هوشمند برای جوین ----------
+
 async def smart_join(client, message, raw_link):
     link = re.sub(r"[\u200b\u200c\uFEFF\s]+", "", raw_link).strip()
     if not link:
@@ -119,11 +121,11 @@ async def smart_join(client, message, raw_link):
         await message.reply_text(f"{msg}\n\n🔗 `{link}`")
         print(f"⚠️ Error joining {link}: {err}")
 
-
 # ---------- 📩 فقط پیوی و کانال ----------
+
 @app.on_message((filters.private | filters.channel) & filters.text)
 async def handle_links(client, message):
-    text = message.text.strip().lower()
+    text = message.text.strip()
 
     # بررسی لینک‌ها
     links = re.findall(r"(https?://t\.me/[^\s]+|https?://telegram\.me/[^\s]+|@[\w\d_]+)", text)
@@ -135,8 +137,6 @@ async def handle_links(client, message):
     # 👋 اگر لینک نبود ولی در پی‌وی پیام داده شد
     if message.chat.type == "private":
         user = message.from_user
-
-        # اگر کاربر جدید بود
         if user and user.id not in known_users:
             known_users.add(user.id)
             name = user.first_name or "کاربر"
@@ -145,22 +145,17 @@ async def handle_links(client, message):
                 f.write(f"{user.id} | {name} | {username}\n")
             print(f"🆕 کاربر جدید ثبت شد: {name} ({user.id})")
 
-            # ۵ ثانیه بعد پیام خوشامد بده
+            # ۵ ثانیه بعد پیام ساده بده
             await asyncio.sleep(5)
             await client.send_message(user.id, "سلام بفرمایید؟")
-            return
-
-        # اگر کاربر قدیمی بود و گفت سلام → پاسخ بده
-        if text in ["سلام", "salam", "hi", "hello"]:
-            await message.reply_text("سلام 👋")
-
 
 # ---------- 🚫 نادیده گرفتن گروه‌ها ----------
+
 @app.on_message(filters.group)
 async def ignore_groups(client, message):
     return
 
-
 # ---------- 🚀 شروع ----------
+
 print("🚀 یوزربات فعال شد — پاسخ سلام فعال شد و فقط در پیوی و کانال‌ها کار می‌کند.")
 app.run()
