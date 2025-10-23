@@ -8,7 +8,7 @@ API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 SESSION_STRING = os.getenv("SESSION_STRING")
 
-SUDO_ID = 7089376754  # آیدی عددی خودت
+SUDO_ID = 7089376754  # عدد آی‌دی خودت (از @userinfobot بگیر)
 SUDO_USERS = [SUDO_ID]
 
 # ================= 📱 ساخت یوزربات =================
@@ -34,7 +34,12 @@ def is_sudo(_, __, message):
     return message.from_user and message.from_user.id in SUDO_USERS
 sudo = filters.create(is_sudo)
 
-# ================= 💬 پاسخ خودکار در پی‌وی =================
+# ================= 🔹 وقتی روشن شد =================
+@app.on_message(filters.me & filters.regex("^/start$"))
+async def start_message(client, message):
+    await message.reply_text("✅ سارا بات فعال شد و آماده‌ست 💖")
+
+# ================= 💬 پاسخ خودکار به سلام در پی‌وی =================
 @app.on_message(filters.private & filters.text)
 async def auto_reply_private(client, message):
     text = message.text.strip().lower()
@@ -50,19 +55,19 @@ async def auto_reply_private(client, message):
     if text in ["سلام", "hi", "hello", "salam"]:
         await message.reply_text("سلام 🌹 خوش اومدی 💬")
 
-# ================= 🔗 دستورهای مدیریتی =================
+# ================= 🔗 دستور: بیا / پایان =================
 @app.on_message(sudo & filters.text)
 async def sara_commands(client, message):
     text = message.text.strip().lower()
     chat_id = message.chat.id
 
-    # 🟢 بیا
+    # 🟢 دستور: بیا
     if text == "بیا":
         waiting_for_links[chat_id] = []
         await message.reply_text("📎 لینک‌هاتو بفرست (هر کدوم در یک خط)\nوقتی تموم شد بنویس: پایان")
         return
 
-    # 🟢 پایان
+    # 🟢 دستور: پایان
     if text == "پایان" and chat_id in waiting_for_links:
         links = waiting_for_links.pop(chat_id)
         if not links:
@@ -72,7 +77,7 @@ async def sara_commands(client, message):
         await join_links(client, message, links)
         return
 
-    # 🟢 آمار
+    # 🟢 دستور: آمار
     if text in ["آمار", "stats"]:
         joined_count = 0
         try:
@@ -89,14 +94,14 @@ async def sara_commands(client, message):
         )
         return
 
-    # 🧹 پاکسازی دستی
+    # 🟢 دستور: پاکسازی دستی
     if text in ["پاکسازی دستی", "clean"]:
         await message.reply_text("🔍 در حال پاکسازی دستی گروه‌های خراب...")
         await clean_broken_groups(manual=True)
         await message.reply_text("✅ پاکسازی دستی تموم شد.")
         return
 
-    # 🚪 برو بیرون
+    # 🟢 دستور: برو بیرون
     if text == "برو بیرون":
         try:
             await client.leave_chat(message.chat.id)
@@ -105,7 +110,7 @@ async def sara_commands(client, message):
             await message.reply_text(f"⚠️ خطا هنگام خروج: {e}")
         return
 
-    # 📎 دریافت لینک‌ها
+    # 🟢 دریافت لینک‌ها در حالت انتظار
     if chat_id in waiting_for_links:
         new_links = [line.strip() for line in text.splitlines() if line.strip()]
         waiting_for_links[chat_id].extend(new_links)
@@ -127,6 +132,7 @@ async def join_links(client, message, links):
             else:
                 results.append(f"⚠️ لینک نامعتبر: {link}")
                 continue
+
             joined += 1
             results.append(f"✅ وارد شدم → {link}")
         except Exception as e:
@@ -206,33 +212,12 @@ async def auto_clean_task():
         await clean_broken_groups(manual=False)
         await asyncio.sleep(CLEAN_INTERVAL)
 
-# ================= ♻️ ری‌استارت خودکار در صورت خطا =================
-async def auto_restart_on_crash():
-    while True:
-        try:
-            await main_loop()
-        except Exception as e:
-            print(f"⚠️ خطای اصلی: {e}\nدر حال ری‌استارت...")
-            try:
-                await app.send_message(SUDO_ID, f"❌ سارا خاموش شد!\nدر حال تلاش برای روشن شدن مجدد...")
-            except:
-                pass
-            await asyncio.sleep(10)  # بعد از ۱۰ ثانیه خودش دوباره بالا میاد
-
-# ================= 🚀 حلقه اصلی =================
-async def main_loop():
+# ================= 🚀 شروع اصلی =================
+async def main():
     await app.start()
     print("✅ سارا بات با موفقیت فعال شد و در حال اجراست...")
-
-    # 💬 پیام شروع برای سودو
-    try:
-        await app.send_message(SUDO_ID, "💖 سارا روشن شد و فعاله!\nهمه‌چی آماده‌ست 🌹")
-    except Exception as e:
-        print(f"⚠️ نتونستم پیام شروع بفرستم: {e}")
-
     asyncio.create_task(auto_clean_task())
     await asyncio.Event().wait()
 
-# ================= 🏁 اجرای نهایی =================
 if __name__ == "__main__":
-    asyncio.run(auto_restart_on_crash())
+    asyncio.run(main())
