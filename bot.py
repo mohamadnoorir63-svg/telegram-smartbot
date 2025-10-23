@@ -16,8 +16,9 @@ app = Client("sara_userbot", api_id=API_ID, api_hash=API_HASH, session_string=SE
 @app.on_message(filters.me & filters.regex(r"^موزیک (.+)"))
 async def send_music(client, message):
     query = message.matches[0].group(1).strip()
-    msg = await message.reply_text(f"🎧 در حال جست‌وجوی موزیک برای: <b>{query}</b>", parse_mode="HTML")
+    msg = await message.reply_text(f"🎧 در حال جست‌وجوی موزیک برای: <b>{query}</b>", parse_mode="html")
 
+    # --- دانلود از یوتیوب ---
     async def from_youtube(q):
         ydl_opts = {
             "format": "bestaudio/best",
@@ -41,6 +42,7 @@ async def send_music(client, message):
             title = entry["title"]
             return filename, title
 
+    # --- جایگزین SoundCloud ---
     async def from_soundcloud(q):
         client_id = os.getenv("YOUR_CLIENT_ID")
         if not client_id:
@@ -59,23 +61,24 @@ async def send_music(client, message):
         try:
             # 🎬 دانلود از یوتیوب
             filename, title = await asyncio.to_thread(from_youtube, query)
-            await msg.edit_text(f"✅ از YouTube پیدا شد: {title}\n📤 درحال ارسال فایل MP3 ...")
+            await msg.edit_text(f"✅ از YouTube پیدا شد: {title}\n📤 درحال ارسال فایل MP3 ...", parse_mode="html")
             await message.reply_audio(filename, title=title, performer="YouTube 🎧")
             os.remove(filename)
             await msg.delete()
 
         except Exception as e1:
             print("YouTube failed:", e1)
-            await msg.edit_text("⚠️ یوتیوب در دسترس نیست، تلاش از SoundCloud ...")
+            await msg.edit_text("⚠️ یوتیوب در دسترس نیست، تلاش از SoundCloud ...", parse_mode="html")
 
             try:
                 url, title = await from_soundcloud(query)
-                await msg.edit_text(f"🎶 از SoundCloud پیدا شد:\n<b>{title}</b>\n🔗 {url}", parse_mode="HTML")
+                await msg.edit_text(f"🎶 از SoundCloud پیدا شد:\n<b>{title}</b>\n🔗 {url}", parse_mode="html")
             except Exception as e2:
-                await msg.edit_text(f"❌ هیچ منبعی پیدا نشد.\n\nYouTube: {e1}\nSoundCloud: {e2}")
+                await msg.edit_text(f"❌ هیچ منبعی پیدا نشد.\n\nYouTube: {e1}\nSoundCloud: {e2}", parse_mode="html")
 
     except Exception as e:
-        await msg.edit_text(f"❌ خطا: {e}")
+        await msg.edit_text(f"❌ خطا: {e}", parse_mode="html")
+
 
 if __name__ == "__main__":
     print("✅ Sara Music Downloader started.")
