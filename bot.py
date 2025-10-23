@@ -129,7 +129,7 @@ async def auto_reply_and_save(_, message: Message):
 
         # فقط یک بار جواب بده
         if "سلام" in text and not users_data[user_id]["replied"]:
-            await message.reply_text("سلام بفرما؟ 😊")
+            await message.reply_text("سلام بفرما؟ ")
             users_data[user_id]["replied"] = True
             save_json(users_file, users_data)
 
