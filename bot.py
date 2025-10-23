@@ -1,93 +1,58 @@
 import os
-import yt_dlp
-import asyncio
 from pyrogram import Client, filters
 from pytgcalls import PyTgCalls, idle
-from pytgcalls.types import AudioPiped
-from pytgcalls.types.input_stream import InputAudioStream
+from pytgcalls.types.input_stream import AudioPiped
+import yt_dlp
 
-# ====== ⚙️ تنظیمات ======
+# ---------------- تنظیمات ----------------
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 SESSION_STRING = os.getenv("SESSION_STRING")
 
-# ساخت یوزربات
-app = Client("music_voice_userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
-pytg = PyTgCalls(app)
+# ساخت کلاینت و اتصال صوتی
+app = Client("music_bot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
+call = PyTgCalls(app)
 
-# پوشه آهنگ‌ها
-if not os.path.exists("downloads"):
-    os.mkdir("downloads")
-
-# ====== 🎶 دانلود آهنگ ======
-async def download_audio(query):
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "outtmpl": "downloads/%(title)s.%(ext)s",
-        "quiet": True,
-        "noplaylist": True,
-    }
-
-    loop = asyncio.get_event_loop()
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        def _download():
-            if "http" in query:
-                return ydl.extract_info(query, download=True)
-            else:
-                return ydl.extract_info(f"ytsearch1:{query}", download=True)["entries"][0]
-        info = await loop.run_in_executor(None, _download)
-        filename = ydl.prepare_filename(info)
-    return filename, info.get("title", "Unknown")
-
-# ====== 🎧 شروع پخش آهنگ ======
-@app.on_message(filters.text & filters.regex(r"^(\/play|\/music|آهنگ)"))
+# ---------------- پخش موزیک ----------------
+@app.on_message(filters.command("play", prefixes=["/"]))
 async def play_music(client, message):
-    chat_id = message.chat.id
-    text = message.text.strip()
-
-    # دریافت نام یا لینک آهنگ
-    query = text.replace("/play", "").replace("/music", "").replace("آهنگ", "").strip()
-    if not query:
-        await message.reply_text("🎵 لطفاً نام آهنگ یا لینک یوتیوب را بنویس.\nمثلاً:\n`/play Arash Broken Angel`")
+    if len(message.command) < 2:
+        await message.reply_text("🎵 لطفاً نام آهنگ یا لینک یوتیوب رو بعد از /play بنویس.")
         return
 
-    msg = await message.reply_text(f"🎧 در حال دریافت آهنگ **{query}** ...")
+    query = " ".join(message.command[1:])
+    msg = await message.reply_text(f"🎧 در حال جستجو برای: {query}")
+
     try:
-        file_path, title = await download_audio(query)
-        await msg.edit_text(f"🎶 در حال پخش: **{title}**")
+        ydl_opts = {"format": "bestaudio/best", "quiet": True}
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"ytsearch:{query}", download=False)["entries"][0]
+            url = info["url"]
+            title = info["title"]
 
-        # وصل شدن به ویس و پخش آهنگ
-        await pytg.join_group_call(
-            chat_id,
-            AudioPiped(file_path, stream_type=InputAudioStream),
-        )
-
-        await message.reply_text(f"✅ پخش آغاز شد: **{title}**")
+        chat_id = message.chat.id
+        await call.join_group_call(chat_id, AudioPiped(url))
+        await msg.edit_text(f"▶️ پخش: **{title}**")
 
     except Exception as e:
-        await msg.edit_text(f"❌ خطا در پخش:\n`{e}`")
+        await msg.edit_text(f"❌ خطا در پخش: {e}")
 
-# ====== ⏹ توقف پخش ======
-@app.on_message(filters.text & filters.regex(r"^(\/stop|\/leave|توقف|خروج)$"))
+# ---------------- توقف پخش ----------------
+@app.on_message(filters.command("stop", prefixes=["/"]))
 async def stop_music(client, message):
-    chat_id = message.chat.id
     try:
-        await pytg.leave_group_call(chat_id)
-        await message.reply_text("⏹ پخش متوقف شد و از ویس خارج شدم.")
+        await call.leave_group_call(message.chat.id)
+        await message.reply_text("⏹ پخش متوقف شد.")
     except Exception as e:
-        await message.reply_text(f"⚠️ خطا هنگام توقف:\n`{e}`")
+        await message.reply_text(f"⚠️ خطا در توقف: {e}")
 
-# ====== 🚀 شروع ======
-@pytg.on_stream_end()
-async def stream_ended(_, update):
+# ---------------- شروع ----------------
+@call.on_stream_end()
+async def on_end(_, update):
     chat_id = update.chat_id
-    await app.send_message(chat_id, "🎵 آهنگ تموم شد!")
+    await call.leave_group_call(chat_id)
 
-async def main():
-    await app.start()
-    await pytg.start()
-    print("🎤 Voice MusicBot gestartet!")
-    await idle()
-
-if __name__ == "__main__":
-    asyncio.run(main())
+print("🎤 MusicBot gestartet!")
+app.start()
+call.start()
+idle()
