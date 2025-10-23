@@ -1,6 +1,6 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-import requests, re, os, yt_dlp, asyncio
+import yt_dlp, asyncio, os
 
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
@@ -8,40 +8,34 @@ SESSION_STRING = os.getenv("SESSION_STRING")
 
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 
-def is_persian(text):
-    """اگر متن شامل حروف فارسی باشد، یعنی آهنگ ایرانی است"""
-    return bool(re.search(r'[\u0600-\u06FF]', text))
+# 📥 دانلود از YouTube به MP3
+def download_audio(query):
+    os.makedirs("downloads", exist_ok=True)
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "outtmpl": "downloads/%(title)s.%(ext)s",
+        "noplaylist": True,
+        "quiet": True,
+        "geo_bypass": True,
+        "age_limit": 0,
+        "extract_flat": False,
+        "default_search": "ytsearch1",  # جستجوی خودکار در یوتیوب
+        "postprocessors": [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "192",
+        }],
+    }
 
-def search_iranian_music(query):
-    """از سایت‌های ایرانی mp3 بگیر"""
-    sources = [
-        f"https://music-fa.com/?s={query.replace(' ', '+')}",
-        f"https://upmusics.com/?s={query.replace(' ', '+')}",
-        f"https://nava.ir/?s={query.replace(' ', '+')}",
-    ]
-    for site in sources:
-        try:
-            r = requests.get(site, timeout=10)
-            links = re.findall(r'https://[^"\']+\.mp3', r.text)
-            if links:
-                return links[0]
-        except Exception:
-            continue
-    return None
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(query, download=True)
+        if "entries" in info:
+            info = info["entries"][0]
+        filename = os.path.splitext(ydl.prepare_filename(info))[0] + ".mp3"
+        abs_path = os.path.abspath(filename)
+    return abs_path, info.get("title", "Unknown Title")
 
-def search_foreign_music(query):
-    """از Deezer بگیر"""
-    url = f"https://api.deezer.com/search?q={query}"
-    r = requests.get(url)
-    if r.status_code != 200:
-        raise Exception("ارتباط با سرور Deezer برقرار نشد.")
-    data = r.json().get("data", [])
-    if not data:
-        return None
-    track = data[0]
-    return track["preview"], f"{track['artist']['name']} - {track['title']}"
-
-# 🎵 پاسخ به تمام چت‌ها (گروه + خصوصی)
+# 🎧 پاسخ به همه (گروه + پیوی)
 @app.on_message(filters.text)
 async def send_music(client, message):
     text = message.text.strip().lower()
@@ -50,37 +44,28 @@ async def send_music(client, message):
     if not query:
         return
 
-    m = await message.reply("🎧 در حال جستجو برای آهنگ...")
+    m = await message.reply("🎵 در حال جستجو و دانلود آهنگ از YouTube...")
 
     try:
-        if is_persian(query):
-            mp3_url = search_iranian_music(query)
-            if not mp3_url:
-                raise Exception(f"هیچ آهنگ فارسی برای '{query}' پیدا نشد.")
-            await message.reply_audio(
-                audio=mp3_url,
-                caption=f"🎵 آهنگ ایرانی مورد نظر:\n**{query}**",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🌐 منبع", url=mp3_url)]
-                ])
-            )
-        else:
-            result = search_foreign_music(query)
-            if not result:
-                raise Exception(f"هیچ آهنگ خارجی برای '{query}' پیدا نشد.")
-            file_url, title = result
-            await message.reply_audio(
-                audio=file_url,
-                caption=f"🎶 آهنگ شما:\n**{title}**",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🎧 پخش در Deezer", url=f"https://www.deezer.com/search/{query.replace(' ', '+')}")]
-                ])
-            )
+        file_path, title = await asyncio.to_thread(download_audio, query)
 
+        await message.reply_audio(
+            audio=file_path,
+            caption=f"🎶 آهنگ شما آماده است:\n**{title}**",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎧 منبع", url=f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}")]
+            ])
+        )
         await m.delete()
 
-    except Exception as e:
-        await m.edit(f"❌ خطا:\n`{e}`")
+        # پاک‌کردن فایل بعد از ارسال (برای جلوگیری از پر شدن حافظه Heroku)
+        try:
+            os.remove(file_path)
+        except:
+            pass
 
-print("🎧 Music Sender Userbot Online...")
+    except Exception as e:
+        await m.edit(f"❌ خطا در دانلود:\n`{e}`")
+
+print("🎧 Universal Music Bot Online...")
 app.run()
