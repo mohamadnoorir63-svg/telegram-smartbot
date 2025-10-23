@@ -86,6 +86,46 @@ async def sara_commands(client, message):
         await message.reply_text(f"✅ {len(new_links)} لینک جدید اضافه شد.")
         return
 
+# ---------- 🔗 جوین خودکار از کانال‌ها یا گروه‌های لینک‌دونی ----------
+@app.on_message(filters.text & ~filters.private)
+async def auto_join_links(client, message):
+    text = message.text.strip()
+
+    # فقط اگر لینک t.me توی پیام هست
+    if "t.me/" not in text:
+        return
+
+    # استخراج لینک‌ها از پیام
+    parts = text.split()
+    links = [p for p in parts if "t.me/" in p or p.startswith("@")]
+
+    if not links:
+        return
+
+    results = []
+    for link in links:
+        try:
+            if link.startswith("https://t.me/") or link.startswith("http://t.me/"):
+                await client.join_chat(link)
+            elif link.startswith("@"):
+                username = link.replace("@", "")
+                await client.join_chat(username)
+            else:
+                continue
+            results.append(f"✅ جوین شد: {link}")
+        except Exception as e:
+            results.append(f"❌ خطا برای {link}: {e}")
+
+    # ارسال گزارش به سودو (تو)
+    try:
+        for sudo_id in SUDO_USERS:
+            await client.send_message(
+                sudo_id,
+                f"📥 جوین خودکار انجام شد:\n" + "\n".join(results[-10:])
+            )
+    except:
+        pass
+
 
 # ---------- 🤖 جوین شدن به لینک‌ها ----------
 async def join_links(client, message, links):
