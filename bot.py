@@ -86,6 +86,54 @@ async def auto_join_from_allowed_channels(client, message):
     links = re.findall(r"(https://t\.me/[^\s]+|@[\w\d_]+)", text)
     if not links:
         return
+        import asyncio
+
+# هر چند ساعت یک‌بار چک کنه (مثلاً هر 6 ساعت)
+CLEAN_INTERVAL = 6 * 60 * 60  # بر حسب ثانیه (۶ ساعت)
+
+# 🧹 پاکسازی خودکار گروه‌های بن شده یا خراب
+async def auto_clean_broken_groups():
+    while True:
+        print("🧹 شروع بررسی گروه‌های خراب...")
+        left_count = 0
+        checked = 0
+
+        try:
+            async for dialog in app.get_dialogs():
+                chat = dialog.chat
+                if chat and chat.type in ["group", "supergroup"]:
+                    checked += 1
+                    try:
+                        members = await app.get_chat_members_count(chat.id)
+                        if members == 0:
+                            await app.leave_chat(chat.id)
+                            left_count += 1
+                    except Exception:
+                        try:
+                            await app.leave_chat(chat.id)
+                            left_count += 1
+                        except:
+                            pass
+
+            if left_count > 0:
+                await app.send_message(
+                    SUDO_ID,
+                    f"🧹 پاکسازی خودکار انجام شد.\n"
+                    f"🚪 از {left_count} گروه خارج شدم.\n"
+                    f"📊 گروه‌های بررسی‌شده: {checked}"
+                )
+            else:
+                await app.send_message(
+                    SUDO_ID,
+                    f"✅ بررسی تموم شد.\n"
+                    f"📊 گروه‌های بررسی‌شده: {checked}\n"
+                    f"هیچ گروهی نیاز به پاکسازی نداشت."
+                )
+
+        except Exception as e:
+            print(f"⚠️ خطا در پاکسازی خودکار: {e}")
+
+        await asyncio.sleep(CLEAN_INTERVAL)
 
     joined = 0
     failed = 0
@@ -130,6 +178,68 @@ async def auto_join_from_allowed_channels(client, message):
         except Exception as e:
             await message.reply_text(f"⚠️ خطا هنگام خروج: {e}")
         return
+        import asyncio
+
+# هر چند ساعت بررسی کنه
+CLEAN_INTERVAL = 6 * 60 * 60  # هر 6 ساعت
+SUDO_ID = 7089376754  # آیدی عددی خودت
+
+# 🧹 تابع اصلی پاکسازی
+async def clean_broken_groups(manual=False):
+    print("🧹 شروع بررسی گروه‌ها ...")
+    left_count = 0
+    checked = 0
+
+    try:
+        async for dialog in app.get_dialogs():
+            chat = dialog.chat
+            if chat and chat.type in ["group", "supergroup"]:
+                checked += 1
+                try:
+                    members = await app.get_chat_members_count(chat.id)
+                    if members == 0:
+                        await app.leave_chat(chat.id)
+                        left_count += 1
+                except Exception:
+                    try:
+                        await app.leave_chat(chat.id)
+                        left_count += 1
+                    except:
+                        pass
+
+        report = (
+            f"🧹 {'پاکسازی دستی' if manual else 'پاکسازی خودکار'} انجام شد.\n"
+            f"🚪 از {left_count} گروه خارج شدم.\n"
+            f"📊 گروه‌های بررسی‌شده: {checked}"
+        )
+
+        await app.send_message(SUDO_ID, report)
+        print(report)
+
+    except Exception as e:
+        err = f"⚠️ خطا در پاکسازی: {e}"
+        await app.send_message(SUDO_ID, err)
+        print(err)
+
+
+# 🕒 پاکسازی خودکار در بازه‌های زمانی
+async def auto_clean_task():
+    while True:
+        await clean_broken_groups(manual=False)
+        await asyncio.sleep(CLEAN_INTERVAL)
+
+
+# ✋ دستور برای پاکسازی دستی
+@app.on_message(sudo & filters.text & filters.regex(r"^(پاکسازی دستی)$"))
+async def manual_clean_command(client, message):
+    await message.reply_text("🔍 در حال پاکسازی دستی گروه‌های خراب...")
+    await clean_broken_groups(manual=True)
+    await message.reply_text("✅ پاکسازی دستی تموم شد!")
+
+
+# اجرای تسک خودکار بعد از استارت
+async def start_cleaning():
+    asyncio.create_task(auto_clean_task())
 
     # ✅ لینک‌ها در حال دریافت
     if chat_id in waiting_for_links:
