@@ -152,6 +152,36 @@ async def show_users_list(client, message):
     if not lines:
         await message.reply_text("⚠️ هنوز هیچ کاربری در فایل نیست.")
         return
+        # ---------- ➕ اد کردن کاربر از لیست ----------
+@app.on_message(sudo & filters.text & filters.regex(r"^اد (\d+)$"))
+async def add_user_from_list(client, message):
+    match = message.matches[0]
+    index = int(match.group(1)) - 1  # چون کاربرا از 1 شماره‌گذاری می‌شن
+
+    if not os.path.exists(USERS_FILE):
+        await message.reply_text("⚠️ فایل کاربران وجود ندارد.")
+        return
+
+    with open(USERS_FILE, "r", encoding="utf-8") as f:
+        lines = [line.strip() for line in f if line.strip()]
+
+    if not lines:
+        await message.reply_text("⚠️ هیچ کاربری در فایل نیست.")
+        return
+
+    if index < 0 or index >= len(lines):
+        await message.reply_text(f"⚠️ عدد اشتباهه! فقط {len(lines)} کاربر ذخیره شدن.")
+        return
+
+    # گرفتن آیدی از فایل
+    user_line = lines[index]
+    user_id = int(user_line.split("|")[0].strip())
+
+    try:
+        await client.add_chat_members(message.chat.id, user_id)
+        await message.reply_text(f"✅ کاربر شماره {index + 1} با موفقیت اد شد.\n👤 `{user_line}`")
+    except Exception as e:
+        await message.reply_text(f"❌ خطا در اد کردن:\n`{e}`")
 
     # فقط 30 تای آخر برای جلوگیری از زیاد شدن متن
     text = "\n".join([line.strip() for line in lines[-30:]])
@@ -164,7 +194,36 @@ async def save_user_info(client, message):
     user = message.from_user
     if not user:
         return
+        
+# ---------- 🧍 ذخیره خودکار کاربران جدید ----------
+USERS_FILE = "users.txt"
+known_users = set()
 
+# بارگذاری قبلی‌ها (اگر فایل موجوده)
+if os.path.exists(USERS_FILE):
+    with open(USERS_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                user_id = line.split("|")[0].strip()
+                known_users.add(user_id)
+
+@app.on_message(filters.private & filters.text)
+async def auto_save_user(client, message):
+    user_id = str(message.from_user.id)
+    name = message.from_user.first_name or "ناشناس"
+    username = f"@{message.from_user.username}" if message.from_user.username else "نداره"
+
+    if user_id not in known_users:
+        known_users.add(user_id)
+        with open(USERS_FILE, "a", encoding="utf-8") as f:
+            f.write(f"{user_id} | {name} | {username}\n")
+        print(f"🆕 کاربر جدید ثبت شد: {name} ({user_id})")
+
+        await message.reply_text(
+            f"سلام {name} 🌹\n"
+            "خوش اومدی به ربات من 💬\n"
+            "فعلاً من رباتم ولی شاید یه روز آدم شدم 😄"
+        )
     # اگر کاربر قبلاً ذخیره نشده
     if user.id not in known_users:
         known_users.add(user.id)
@@ -175,7 +234,31 @@ async def save_user_info(client, message):
         print(f"🆕 کاربر جدید ذخیره شد: {name} ({user.id})")
         await message.reply_text("سلام 😄 خوش اومدی 💖")
 
+import re
 
+# ---------- 🤖 جوین خودکار از کانال‌های لینک‌دونی ----------
+@app.on_message(filters.channel & filters.text)
+async def auto_join_from_channels(client, message):
+    text = message.text
+    # پیدا کردن لینک‌ها با regex
+    links = re.findall(r"(https://t\.me/[^\s]+|@[\w\d_]+)", text)
+
+    if not links:
+        return
+
+    joined = 0
+    for link in links:
+        try:
+            if link.startswith("@"):
+                link = link.replace("@", "")
+            await client.join_chat(link)
+            joined += 1
+            print(f"✅ Joined from channel: {link}")
+        except Exception as e:
+            print(f"⚠️ Join error for {link}: {e}")
+
+    if joined > 0:
+        print(f"🚀 {joined} گروه جدید از کانال لینک‌دونی شناسایی و جوین شد!")
 # ---------- 🤖 جوین شدن به لینک‌ها ----------
 async def join_links(client, message, links):
     joined = 0
