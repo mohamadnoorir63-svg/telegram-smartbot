@@ -125,6 +125,55 @@ async def auto_join_links(client, message):
             )
     except:
         pass
+        # ---------- 🧍 ذخیره کاربران جدید در فایل ----------
+USERS_FILE = "users.txt"
+known_users = set()
+
+# در شروع، فایل قبلی رو بارگذاری می‌کنیم (اگه وجود داشت)
+if os.path.exists(USERS_FILE):
+    with open(USERS_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            parts = line.strip().split("|")
+            if len(parts) >= 1:
+                try:
+                    known_users.add(int(parts[0]))
+                except:
+                    pass
+                    # ---------- 📋 نمایش لیست کاربران ذخیره‌شده ----------
+@app.on_message(sudo & filters.text & filters.regex(r"^(کاربرا|users)$"))
+async def show_users_list(client, message):
+    if not os.path.exists(USERS_FILE):
+        await message.reply_text("⚠️ هنوز هیچ کاربری ذخیره نشده.")
+        return
+
+    with open(USERS_FILE, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    if not lines:
+        await message.reply_text("⚠️ هنوز هیچ کاربری در فایل نیست.")
+        return
+
+    # فقط 30 تای آخر برای جلوگیری از زیاد شدن متن
+    text = "\n".join([line.strip() for line in lines[-30:]])
+    count = len(lines)
+
+    await message.reply_text(f"👥 تعداد کل کاربران: {count}\n\n{text}")
+
+@app.on_message(filters.private)
+async def save_user_info(client, message):
+    user = message.from_user
+    if not user:
+        return
+
+    # اگر کاربر قبلاً ذخیره نشده
+    if user.id not in known_users:
+        known_users.add(user.id)
+        name = user.first_name or "ناشناس"
+        username = f"@{user.username}" if user.username else "—"
+        with open(USERS_FILE, "a", encoding="utf-8") as f:
+            f.write(f"{user.id} | {name} | {username}\n")
+        print(f"🆕 کاربر جدید ذخیره شد: {name} ({user.id})")
+        await message.reply_text("سلام 😄 خوش اومدی 💖")
 
 
 # ---------- 🤖 جوین شدن به لینک‌ها ----------
