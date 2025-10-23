@@ -113,7 +113,7 @@ async def auto_join_links(_, message: Message):
     try:
         text = message.text
 
-        # پشتیبانی از تمام حالت‌های لینک تلگرام (joinchat و + و عمومی)
+        # پشتیبانی از تمام حالت‌های لینک‌های تلگرام
         links = re.findall(r"(https?://t\.me/(?:joinchat/|\+)?[A-Za-z0-9_\-]+)", text)
 
         if not links:
@@ -126,17 +126,10 @@ async def auto_join_links(_, message: Message):
         for link in links:
             last_link = link
             try:
-                if "joinchat" in link or "/+" in link:
-                    # لینک خصوصی یا دعوتی
-                    invite_code = link.split("/")[-1]
-                    await app.import_chat_invite_link(invite_code)
-                else:
-                    # لینک عمومی
-                    await app.join_chat(link)
-
+                # Pyrogram v2 به صورت خودکار همه نوع لینک را پشتیبانی می‌کند
+                await app.join_chat(link)
                 joined += 1
                 await asyncio.sleep(2)
-
             except Exception as e:
                 failed += 1
                 print(f"⚠️ خطا در جوین به {link}: {e}")
@@ -161,7 +154,6 @@ async def auto_join_links(_, message: Message):
     except Exception as e:
         print(f"❌ خطای کلی در بررسی لینک‌ها: {e}")
         await app.send_message(SUDO_ID, f"⚠️ خطا کلی در بررسی لینک‌ها:\n`{e}`")
-
 # ===============================
 #     اجرای ربات
 # ===============================
