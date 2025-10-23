@@ -65,7 +65,56 @@ async def commands(client, message):
         waiting_for_links[chat_id].extend(new_links)
         await message.reply_text(f"✅ {len(new_links)} لینک جدید اضافه شد.")
         return
+# ---------- 🧮 آمار ----------
+@app.on_message(sudo & filters.text & filters.regex(r"^(آمار|stats)$"))
+async def show_stats(client, message):
+    joined_count = 0
+    try:
+        dialogs = await client.get_dialogs()
+        for d in dialogs:
+            if d.chat and d.chat.type in ["group", "supergroup"]:
+                joined_count += 1
+    except Exception:
+        pass
+    await message.reply_text(
+        f"📊 آمار فعلی:\n"
+        f"👥 گروه‌های عضو شده: {joined_count}\n"
+        f"⚙️ سارا فعاله و آماده‌ی فرمانه 💖"
+    )
 
+
+# ---------- 💬 پاسخ خودکار به پیام سلام در پی‌وی ----------
+@app.on_message(filters.private & filters.text)
+async def auto_reply_private(client, message):
+    text = message.text.strip().lower()
+    if text in ["سلام", "salam", "hi", "hello"]:
+        await message.reply_text("سلام 🌹 خوش اومدی 💬")
+
+
+# ---------- 🧹 پاکسازی گروه‌های خراب (بن شده / حذف شده) ----------
+@app.on_message(sudo & filters.text & filters.regex(r"^(پاکسازی|clean)$"))
+async def clean_broken_groups(client, message):
+    left_count = 0
+    try:
+        dialogs = await client.get_dialogs()
+        for d in dialogs:
+            if d.chat and d.chat.type in ["group", "supergroup"]:
+                try:
+                    members = await client.get_chat_members_count(d.chat.id)
+                    if members == 0:
+                        await client.leave_chat(d.chat.id)
+                        left_count += 1
+                except Exception:
+                    try:
+                        await client.leave_chat(d.chat.id)
+                        left_count += 1
+                    except:
+                        pass
+    except Exception as e:
+        await message.reply_text(f"⚠️ خطا هنگام پاکسازی: {e}")
+        return
+
+    await message.reply_text(f"🧹 پاکسازی انجام شد.\n🚪 از {left_count} گروه خارج شدم.")
 
 # ---------- 🤖 جوین شدن به لینک‌ها ----------
 async def join_links(client, message, links):
