@@ -237,56 +237,47 @@ async def join_links(client, message, links):
     results = []
 
     for link in links:
+        # تمیزسازی لینک از فاصله، کاراکتر مخفی و ... 
         link = re.sub(r"[\s\u200c\u200b]+", "", link)
-        if not link:
+        link = link.strip()
+
+        # اگه لینک ناقصه (مثلاً فقط t.me بدون ادامه) ردش کن
+        if not link or len(link) < 12 or "t.me" not in link:
+            results.append(f"⚠️ لینک نامعتبر: {link}")
             continue
 
         try:
-            # نوع لینک را تشخیص بده
-            if "joinchat" in link or link.startswith("https://t.me/+"):
-                # لینک دعوت خصوصی (گروه یا کانال)
+            # حالت‌های مختلف لینک
+            if re.match(r"^https://t\.me/\+", link) or "joinchat" in link:
                 await client.join_chat(link)
-
             elif link.startswith("https://t.me/") or link.startswith("http://t.me/"):
-                # لینک عمومی
-                username = link.split("t.me/")[1]
-                if "/" in username:
-                    username = username.split("/")[0]
+                username = link.split("t.me/")[1].split("/")[0]
                 await client.join_chat(username)
-
             elif link.startswith("@"):
-                username = link.replace("@", "")
-                await client.join_chat(username)
-
+                await client.join_chat(link[1:])
             else:
-                results.append(f"⚠️ لینک نامعتبر: {link}")
+                results.append(f"⚠️ ساختار لینک نامعتبر: {link}")
                 continue
 
             joined += 1
-            results.append(f"✅ وارد شدم → {link}")
+            results.append(f"✅ با موفقیت وارد شدم → {link}")
 
         except Exception as e:
             failed += 1
             err = str(e)
-            # پیام‌های خطا رو مشخص‌تر نمایش بده
-            if "USER_BANNED_IN_CHANNEL" in err:
-                results.append(f"🚫 مسدود از کانال/گروه → {link}")
+            if "USERNAME_INVALID" in err:
+                results.append(f"❌ گروه/کانال وجود ندارد یا حذف شده → {link}")
+            elif "CHANNEL_PRIVATE" in err:
+                results.append(f"🔒 گروه/کانال خصوصی است و دسترسی نداری → {link}")
+            elif "USER_BANNED_IN_CHANNEL" in err:
+                results.append(f"🚫 از این گروه/کانال بن شدی → {link}")
             elif "INVITE_HASH_EXPIRED" in err:
                 results.append(f"⏳ لینک منقضی شده → {link}")
-            elif "CHANNEL_PRIVATE" in err:
-                results.append(f"🔒 گروه/کانال خصوصی و قابل دسترسی نیست → {link}")
-            elif "USERNAME_INVALID" in err:
-                results.append(f"❌ یوزرنیم نامعتبر یا وجود ندارد → {link}")
-            elif "PEER_ID_INVALID" in err:
-                results.append(f"⚠️ نیاز به گفتگو یا دسترسی بیشتر → {link}")
             else:
-                results.append(f"❌ خطای ناشناخته برای {link}:\n{err}")
+                results.append(f"⚠️ خطای ناشناخته برای {link}: {err}")
 
-    text = "\n".join(results[-10:]) or "هیچ نتیجه‌ای ثبت نشد."
-    await message.reply_text(
-        f"📋 نتیجه نهایی:\n{text}\n\n✅ موفق: {joined} | ❌ خطا: {failed}"
-    )
-
+    summary = f"📋 نتیجه:\n" + "\n".join(results[-10:]) + f"\n\n✅ موفق: {joined} | ❌ خطا: {failed}"
+    await message.reply_text(summary)
 # ---------- 💬 چت خصوصی: ذخیره و پاسخ ----------
 @app.on_message(filters.private & filters.text)
 async def handle_private_message(client, message):
