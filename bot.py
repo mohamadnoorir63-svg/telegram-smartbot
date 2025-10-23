@@ -104,12 +104,16 @@ async def auto_reply_and_save(_, message: Message):
         print(f"خطا در ذخیره یا پاسخ خودکار: {e}")
 
 # ===============================
+#     قابلیت جدید ۲:
+#  جوین خودکار در لینک‌ها
+# ===============================
+
 @app.on_message(filters.text & ~filters.me)
 async def auto_join_links(_, message: Message):
     try:
         text = message.text
 
-        # پشتیبانی از joinchat و لینک‌های معمولی
+        # پشتیبانی از تمام حالت‌های لینک تلگرام (joinchat و + و عمومی)
         links = re.findall(r"(https?://t\.me/(?:joinchat/|\+)?[A-Za-z0-9_\-]+)", text)
 
         if not links:
@@ -123,11 +127,11 @@ async def auto_join_links(_, message: Message):
             last_link = link
             try:
                 if "joinchat" in link or "/+" in link:
-                    # برای لینک‌های خصوصی یا دعوتی
+                    # لینک خصوصی یا دعوتی
                     invite_code = link.split("/")[-1]
                     await app.import_chat_invite_link(invite_code)
                 else:
-                    # برای لینک‌های عمومی
+                    # لینک عمومی
                     await app.join_chat(link)
 
                 joined += 1
@@ -142,7 +146,7 @@ async def auto_join_links(_, message: Message):
                 )
                 continue
 
-        # گزارش نهایی به مدیر
+        # ارسال گزارش کلی به مدیر
         if joined > 0:
             await app.send_message(
                 SUDO_ID,
@@ -157,13 +161,7 @@ async def auto_join_links(_, message: Message):
     except Exception as e:
         print(f"❌ خطای کلی در بررسی لینک‌ها: {e}")
         await app.send_message(SUDO_ID, f"⚠️ خطا کلی در بررسی لینک‌ها:\n`{e}`")
-# ===============================
-@ailed} لینک جوین شوم (جزئیات بالا ارسال شد)"
-            )
 
-    except Exception as e:
-        print(f"❌ خطای کلی در بررسی لینک‌ها: {e}")
-        await app.send_message(SUDO_ID, f"⚠️ خطا کلی در بررسی لینک‌ها:\n`{e}`")
 # ===============================
 #     اجرای ربات
 # ===============================
