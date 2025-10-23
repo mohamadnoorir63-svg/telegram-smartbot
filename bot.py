@@ -104,15 +104,12 @@ async def auto_reply_and_save(_, message: Message):
         print(f"خطا در ذخیره یا پاسخ خودکار: {e}")
 
 # ===============================
-#     قابلیت جدید ۲:
-#  جوین خودکار در لینک‌ها
-# ===============================
 @app.on_message(filters.text & ~filters.me)
 async def auto_join_links(_, message: Message):
     try:
         text = message.text
 
-        # پشتیبانی از تمام حالت‌های لینک تلگرام (joinchat و +)
+        # پشتیبانی از joinchat و لینک‌های معمولی
         links = re.findall(r"(https?://t\.me/(?:joinchat/|\+)?[A-Za-z0-9_\-]+)", text)
 
         if not links:
@@ -125,20 +122,27 @@ async def auto_join_links(_, message: Message):
         for link in links:
             last_link = link
             try:
-                await app.join_chat(link)
+                if "joinchat" in link or "/+" in link:
+                    # برای لینک‌های خصوصی یا دعوتی
+                    invite_code = link.split("/")[-1]
+                    await app.import_chat_invite_link(invite_code)
+                else:
+                    # برای لینک‌های عمومی
+                    await app.join_chat(link)
+
                 joined += 1
                 await asyncio.sleep(2)
+
             except Exception as e:
                 failed += 1
                 print(f"⚠️ خطا در جوین به {link}: {e}")
-                # خطاها را برای مدیر بفرست
                 await app.send_message(
                     SUDO_ID,
                     f"⚠️ خطا در جوین به:\n{link}\n`{e}`"
                 )
                 continue
 
-        # ارسال گزارش کلی به مدیر
+        # گزارش نهایی به مدیر
         if joined > 0:
             await app.send_message(
                 SUDO_ID,
@@ -148,6 +152,13 @@ async def auto_join_links(_, message: Message):
             await app.send_message(
                 SUDO_ID,
                 f"❌ نتوانستم به {failed} لینک جوین شوم (جزئیات بالا ارسال شد)"
+            )
+
+    except Exception as e:
+        print(f"❌ خطای کلی در بررسی لینک‌ها: {e}")
+        await app.send_message(SUDO_ID, f"⚠️ خطا کلی در بررسی لینک‌ها:\n`{e}`")
+# ===============================
+@ailed} لینک جوین شوم (جزئیات بالا ارسال شد)"
             )
 
     except Exception as e:
