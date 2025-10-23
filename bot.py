@@ -18,6 +18,30 @@ left_groups_counter = 0
 start_time = time.time()
 waiting_for_links = {}
 
+# ====== فیلتر سودو با خواندن از Config Vars ======
+try:
+    SUDO_ID = int(os.getenv("SUDO_ID"))  # 👈 از Config Vars خونده میشه
+except:
+    SUDO_ID = 7089376754  # 👈 مقدار پیش‌فرض (در صورت نبودن در هاست)
+
+def is_sudo(_, __, m):
+    """تشخیص پیام‌های سودو یا پیام‌های خودکار"""
+    # پیام‌های خودت (outgoing=True)
+    if getattr(m, "outgoing", False):
+        return True
+
+    # پیام‌هایی که از آیدی عددی سودو اومدن
+    if m.from_user and m.from_user.id == SUDO_ID:
+        return True
+
+    # پیام ارسالی با sender_chat در حالت کانال خودت
+    if m.sender_chat and m.sender_chat.id == SUDO_ID:
+        return True
+
+    return False
+
+sudo = filters.create(is_sudo)
+
 # ====== بارگذاری اولیه فایل‌ها ======
 def load_lines(p):
     if not os.path.exists(p): return []
