@@ -1,54 +1,93 @@
-import os, asyncio, aiohttp
+import os
+import yt_dlp
+import asyncio
 from pyrogram import Client, filters
+from pytgcalls import PyTgCalls, idle
+from pytgcalls.types import AudioPiped
+from pytgcalls.types.input_stream import InputAudioStream
 
-# ===== 🌍 Environment =====
+# ====== ⚙️ تنظیمات ======
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 SESSION_STRING = os.getenv("SESSION_STRING")
-SUDO_ID = int(os.getenv("SUDO_ID"))
-# ===========================
 
-app = Client("sara_userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
+# ساخت یوزربات
+app = Client("music_voice_userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
+pytg = PyTgCalls(app)
 
-# 🎵 سرچ موزیک با API عمومی Saavn/Deezer
-async def search_music(query):
-    url = f"https://saavn.me/search/songs?query={query}"
-    async with aiohttp.ClientSession() as ses:
-        async with ses.get(url) as resp:
-            data = await resp.json()
-            songs = data.get("data", {}).get("results", [])
-            if not songs:
-                raise Exception("چیزی پیدا نشد.")
-            first = songs[0]
-            return {
-                "title": first["title"],
-                "artist": first["primaryArtists"],
-                "mp3": first["downloadUrl"][-1]["link"],  # لینک کیفیت 320kbps
-                "image": first["image"][-1]["link"],
-            }
+# پوشه آهنگ‌ها
+if not os.path.exists("downloads"):
+    os.mkdir("downloads")
 
-@app.on_message(filters.me & filters.regex(r"^موزیک (.+)"))
-async def send_music(client, message):
-    query = message.matches[0].group(1).strip()
-    msg = await message.reply_text(f"🎧 درحال جست‌وجوی موزیک: <b>{query}</b>", parse_mode="html")
+# ====== 🎶 دانلود آهنگ ======
+async def download_audio(query):
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "outtmpl": "downloads/%(title)s.%(ext)s",
+        "quiet": True,
+        "noplaylist": True,
+    }
 
+    loop = asyncio.get_event_loop()
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        def _download():
+            if "http" in query:
+                return ydl.extract_info(query, download=True)
+            else:
+                return ydl.extract_info(f"ytsearch1:{query}", download=True)["entries"][0]
+        info = await loop.run_in_executor(None, _download)
+        filename = ydl.prepare_filename(info)
+    return filename, info.get("title", "Unknown")
+
+# ====== 🎧 شروع پخش آهنگ ======
+@app.on_message(filters.text & filters.regex(r"^(\/play|\/music|آهنگ)"))
+async def play_music(client, message):
+    chat_id = message.chat.id
+    text = message.text.strip()
+
+    # دریافت نام یا لینک آهنگ
+    query = text.replace("/play", "").replace("/music", "").replace("آهنگ", "").strip()
+    if not query:
+        await message.reply_text("🎵 لطفاً نام آهنگ یا لینک یوتیوب را بنویس.\nمثلاً:\n`/play Arash Broken Angel`")
+        return
+
+    msg = await message.reply_text(f"🎧 در حال دریافت آهنگ **{query}** ...")
     try:
-        info = await search_music(query)
-        await msg.edit_text(
-            f"🎵 <b>{info['title']}</b>\n👤 {info['artist']}\n\n📤 درحال ارسال فایل MP3 ...",
-            parse_mode="html"
+        file_path, title = await download_audio(query)
+        await msg.edit_text(f"🎶 در حال پخش: **{title}**")
+
+        # وصل شدن به ویس و پخش آهنگ
+        await pytg.join_group_call(
+            chat_id,
+            AudioPiped(file_path, stream_type=InputAudioStream),
         )
-        await message.reply_audio(
-            info["mp3"],
-            title=info["title"],
-            performer=info["artist"],
-            thumb=info["image"]
-        )
-        await msg.delete()
+
+        await message.reply_text(f"✅ پخش آغاز شد: **{title}**")
 
     except Exception as e:
-        await msg.edit_text(f"❌ خطا یا موزیک یافت نشد.\n{e}", parse_mode="html")
+        await msg.edit_text(f"❌ خطا در پخش:\n`{e}`")
+
+# ====== ⏹ توقف پخش ======
+@app.on_message(filters.text & filters.regex(r"^(\/stop|\/leave|توقف|خروج)$"))
+async def stop_music(client, message):
+    chat_id = message.chat.id
+    try:
+        await pytg.leave_group_call(chat_id)
+        await message.reply_text("⏹ پخش متوقف شد و از ویس خارج شدم.")
+    except Exception as e:
+        await message.reply_text(f"⚠️ خطا هنگام توقف:\n`{e}`")
+
+# ====== 🚀 شروع ======
+@pytg.on_stream_end()
+async def stream_ended(_, update):
+    chat_id = update.chat_id
+    await app.send_message(chat_id, "🎵 آهنگ تموم شد!")
+
+async def main():
+    await app.start()
+    await pytg.start()
+    print("🎤 Voice MusicBot gestartet!")
+    await idle()
 
 if __name__ == "__main__":
-    print("✅ Sara Music (API Version) started.")
-    app.run()
+    asyncio.run(main())
