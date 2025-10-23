@@ -2,7 +2,6 @@ import os
 import re
 import asyncio
 from pyrogram import Client, filters
-from pyrogram.errors import FloodWait
 
 # ---------- ⚙️ تنظیمات ----------
 API_ID = int(os.getenv("API_ID"))
@@ -12,53 +11,98 @@ SESSION_STRING = os.getenv("SESSION_STRING")
 # ---------- 📱 ساخت یوزربات ----------
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 
-# ---------- 🧠 تابع بررسی عضویت ----------
-async def is_joined(client, chat_id):
-    try:
-        me = await client.get_me()
-        member = await client.get_chat_member(chat_id, me.id)
-        return member.status in ["member", "administrator", "creator"]
-    except Exception:
-        return False
+# آیدی سودو برای گزارش
+ADMIN_ID = 7089376754
 
 
-# ---------- 🔁 تابع جوین با بررسی واقعی ----------
-async def safe_join(client, link):
-    try:
-        chat = await client.join_chat(link)
-        await asyncio.sleep(2)
-        if await is_joined(client, chat.id):
-            print(f"✅ Joined successfully: {link}")
+# ---------- 🔁 تابع جوین با چند بار تلاش ----------
+async def try_join(client, link, retries=3, delay=3):
+    for attempt in range(1, retries + 1):
+        try:
+            chat = await client.join_chat(link)
+            print(f"✅ Joined successfully → {link} (Try {attempt})")
+
+            # ارسال گزارش به سودو بعد از جوین موفق
+            try:
+                await client.send_message(
+                    ADMIN_ID,
+                    f"✅ با موفقیت وارد شدم:\n📎 {link}\n🆔 {chat.id}\n📛 {chat.title or 'بدون نام'}",
+                )
+            except Exception as e:
+                print(f"⚠️ ارسال گزارش به سودو ناموفق بود: {e}")
+
             return True
-        else:
-            print(f"❌ Not actually joined: {link}")
-            return False
-    except FloodWait as e:
-        print(f"⏳ FloodWait: {e.value}s for {link}")
-        await asyncio.sleep(e.value)
-        return await safe_join(client, link)
-    except Exception as e:
-        print(f"⚠️ Error joining {link}: {e}")
-        return False
+
+        except Exception as e:
+            err = str(e)
+            print(f"⚠️ Error on try {attempt} for {link}: {err}")
+            if attempt < retries:
+                await asyncio.sleep(delay)
+            else:
+                raise e
+    return False
 
 
-# ---------- 🤖 تابع اصلی جوین ----------
+# ---------- 🧠 تابع هوشمند برای جوین ----------
 async def smart_join(client, message, raw_link):
     link = re.sub(r"[\u200b\u200c\uFEFF\s]+", "", raw_link).strip()
     if not link:
         return
 
     try:
-        joined = await safe_join(client, link)
-        if joined:
-            await message.reply_text(f"✅ با موفقیت عضو شدم:\n`{link}`")
-        else:
-            await message.reply_text(f"❌ نتونستم وارد بشم:\n`{link}`")
+        # 🔹 لینک‌های خصوصی joinchat یا +hash
+        if "joinchat" in link or re.search(r"/\+", link):
+            await try_join(client, link)
+            await message.reply_text(f"✅ وارد شدم (دعوت خصوصی): {link}")
+            return
+
+        # 🔹 لینک‌های عمومی t.me یا telegram.me
+        if link.startswith("https://t.me/") or link.startswith("http://t.me/") or link.startswith("https://telegram.me/"):
+            slug = link.split("/")[-1].split("?")[0]
+            if slug.startswith("+"):
+                await try_join(client, link)
+                await message.reply_text(f"✅ وارد شدم (لینک +): {link}")
+                return
+            else:
+                try:
+                    await try_join(client, slug)
+                    await message.reply_text(f"✅ وارد شدم (یوزرنیم): {slug}")
+                    return
+                except Exception as e:
+                    if "USERNAME_INVALID" in str(e):
+                        fixed = link.replace("https://t.me/", "https://t.me/+")
+                        await try_join(client, fixed)
+                        await message.reply_text(f"✅ لینک اصلاح شد و وارد شدم → {fixed}")
+                        return
+                    else:
+                        raise e
+
+        # 🔹 لینک‌هایی که با @ شروع می‌شوند
+        if link.startswith("@"):
+            await try_join(client, link[1:])
+            await message.reply_text(f"✅ وارد شدم (از @): {link}")
+            return
+
+        # 🔹 سایر موارد
+        await message.reply_text(f"⚠️ ساختار لینک نامشخص بود: {link}")
 
     except Exception as e:
         err = str(e)
-        msg = f"❌ خطا در جوین:\n`{err}`\n\n🔗 `{link}`"
-        await message.reply_text(msg)
+        if "USERNAME_INVALID" in err:
+            msg = "❌ لینک عمومی معتبر نیست یا کانال خصوصی شده."
+        elif "INVITE_HASH_EXPIRED" in err:
+            msg = "⏳ لینک منقضی یا حذف شده."
+        elif "CHANNEL_PRIVATE" in err:
+            msg = "🔒 کانال خصوصی و غیرقابل دسترسی است."
+        elif "USER_BANNED_IN_CHANNEL" in err:
+            msg = "🚫 این اکانت در آن کانال بن شده است."
+        elif "PEER_ID_INVALID" in err:
+            msg = "⚠️ نیاز به مجوز یا گفتگو برای جوین."
+        else:
+            msg = f"❌ خطای ناشناخته:\n{err}"
+
+        await message.reply_text(f"{msg}\n\n🔗 `{link}`")
+        print(f"⚠️ Error joining {link}: {err}")
 
 
 # ---------- 📩 فقط پیوی و کانال ----------
@@ -69,7 +113,7 @@ async def handle_links(client, message):
 
     if not links:
         if message.chat.type == "private":
-            await message.reply_text("📎 لینک تلگرام بفرست تا امتحان کنم جوین شم.")
+            await message.reply_text("📎 لینک تلگرام بفرست تا بررسی کنم.")
         return
 
     for link in links:
@@ -79,9 +123,10 @@ async def handle_links(client, message):
 # ---------- 🚫 نادیده گرفتن گروه‌ها ----------
 @app.on_message(filters.group)
 async def ignore_groups(client, message):
+    # در گروه‌ها هیچ کاری نکن
     return
 
 
 # ---------- 🚀 شروع ----------
-print("🚀 ربات آماده است — فقط از پیوی یا کانال لینک‌ها را بررسی می‌کند...")
+print("🚀 یوزربات فعال شد — فقط در پیوی و کانال‌ها لینک‌ها را بررسی و بعد از جوین گزارش می‌دهد...")
 app.run()
