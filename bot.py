@@ -41,7 +41,8 @@ def search_foreign_music(query):
     track = data[0]
     return track["preview"], f"{track['artist']['name']} - {track['title']}"
 
-@app.on_message(filters.text & filters.group)
+# 🎵 پاسخ به تمام چت‌ها (گروه + خصوصی)
+@app.on_message(filters.text)
 async def send_music(client, message):
     text = message.text.strip().lower()
     keys = ["آهنگ ", "/آهنگ ", "music ", "/music ", "song ", "/song ", "musik ", "/musik "]
