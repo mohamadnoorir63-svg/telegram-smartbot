@@ -195,12 +195,15 @@ async def auto_join_links(_, message: Message):
 #     آمار کامل (Stats)
 # ===============================
 
-@app.on_message(filters.command("stats") & filters.user(SUDO_ID))
+@app.on_message(filters.command("stats"))
 async def stats(_, message: Message):
     try:
+        # شناسایی فرستنده برای نمایش ID
+        sender_id = message.from_user.id if message.from_user else None
         groups = 0
         privates = 0
         channels = 0
+
         async for dialog in app.get_dialogs():
             if dialog.chat.type == "private":
                 privates += 1
@@ -221,7 +224,8 @@ async def stats(_, message: Message):
 💾 کاربران ذخیره‌شده: `{total_users}`
 🔗 لینک‌های جوین‌شده: `{total_links}`
 
-⚙️ مدیریت: `{SUDO_ID}`
+🆔 آیدی فرستنده: `{sender_id}`
+⚙️ مدیریت تنظیم‌شده: `{SUDO_ID}`
 """
         await message.reply_text(text)
     except Exception as e:
