@@ -14,7 +14,6 @@ app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION
 
 # ---------- 🔁 تابع جوین با چند بار تلاش ----------
 async def try_join(client, link, retries=3, delay=3):
-    """سعی می‌کند تا ۳ بار جوین شود، در صورت خطا بین تلاش‌ها صبر می‌کند"""
     for attempt in range(1, retries + 1):
         try:
             await client.join_chat(link)
@@ -108,7 +107,7 @@ async def handle_links(client, message):
 
 
 # ---------- 🚫 نادیده گرفتن گروه‌ها ----------
-@app.on_message(filters.group | filters.supergroup)
+@app.on_message(filters.group)
 async def ignore_groups(client, message):
     # در گروه هیچ جوابی نده
     return
