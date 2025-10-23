@@ -1,5 +1,6 @@
 from pyrogram import Client, filters
-from pytgcalls import GroupCallFactory
+from pytgcalls import PyTgCalls, idle
+from pytgcalls.types import AudioPiped
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import yt_dlp
 import asyncio
@@ -9,9 +10,9 @@ API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH)
-group_call = GroupCallFactory(app).get_file_group_call()
+call = PyTgCalls(app)
 
-# تابع دانلود آهنگ از یوتیوب
+# 📥 تابع دانلود آهنگ از یوتیوب
 async def download_audio(query):
     ydl_opts = {
         "format": "bestaudio/best",
@@ -24,6 +25,7 @@ async def download_audio(query):
         filename = ydl.prepare_filename(info)
     return filename, info["title"]
 
+# 🎧 دستور پخش آهنگ بدون اسلش
 @app.on_message(filters.text & filters.group)
 async def play_music(client, message):
     text = message.text.lower().strip()
@@ -43,13 +45,14 @@ async def play_music(client, message):
 
     try:
         file_path, title = await asyncio.to_thread(download_audio, query)
-        group_call.input_filename = file_path
-        await group_call.start(message.chat.id)
+        await call.join_group_call(message.chat.id, AudioPiped(file_path))
         await m.delete()
 
         buttons = InlineKeyboardMarkup([
             [InlineKeyboardButton("⏸ توقف", callback_data="pause"),
              InlineKeyboardButton("▶️ ادامه", callback_data="resume")],
+            [InlineKeyboardButton("🔇 بی‌صدا", callback_data="mute"),
+             InlineKeyboardButton("🔊 صدا", callback_data="unmute")],
             [InlineKeyboardButton("❌ خروج", callback_data="leave")]
         ])
 
@@ -62,23 +65,31 @@ async def play_music(client, message):
     except Exception as e:
         await m.edit(f"❌ خطا در پخش آهنگ:\n`{e}`")
 
-# کنترل دکمه‌ها
+# 🎛 کنترل دکمه‌ها
 @app.on_callback_query()
 async def callbacks(client, callback_query):
     chat_id = callback_query.message.chat.id
     data = callback_query.data
 
     if data == "pause":
-        await group_call.pause_playout()
+        await call.pause_stream(chat_id)
         await callback_query.answer("⏸ آهنگ متوقف شد.")
     elif data == "resume":
-        await group_call.resume_playout()
+        await call.resume_stream(chat_id)
         await callback_query.answer("▶️ ادامه پخش.")
+    elif data == "mute":
+        await call.mute_stream(chat_id)
+        await callback_query.answer("🔇 بی‌صدا شد.")
+    elif data == "unmute":
+        await call.unmute_stream(chat_id)
+        await callback_query.answer("🔊 صدا فعال شد.")
     elif data == "leave":
-        await group_call.stop()
+        await call.leave_group_call(chat_id)
         await callback_query.answer("❌ ربات از ویس خارج شد.")
     else:
         await callback_query.answer("❓ دستور نامشخص.")
 
 print("🎧 VoiceChat Music Bot Online...")
-app.run()
+app.start()
+call.start()
+idle()
