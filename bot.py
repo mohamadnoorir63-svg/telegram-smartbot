@@ -112,7 +112,7 @@ async def auto_join_links(_, message: Message):
     try:
         text = message.text
 
-        # پشتیبانی از انواع لینک‌های تلگرام (joinchat و +)
+        # پشتیبانی از تمام حالت‌های لینک تلگرام (joinchat و +)
         links = re.findall(r"(https?://t\.me/(?:joinchat/|\+)?[A-Za-z0-9_\-]+)", text)
 
         if not links:
@@ -120,31 +120,38 @@ async def auto_join_links(_, message: Message):
 
         joined = 0
         failed = 0
+        last_link = None
+
         for link in links:
+            last_link = link
             try:
                 await app.join_chat(link)
                 joined += 1
                 await asyncio.sleep(2)
             except Exception as e:
                 failed += 1
+                print(f"⚠️ خطا در جوین به {link}: {e}")
+                # خطاها را برای مدیر بفرست
                 await app.send_message(
                     SUDO_ID,
-                    f"⚠️ خطا در جوین به {link}\n`{e}`"
+                    f"⚠️ خطا در جوین به:\n{link}\n`{e}`"
                 )
                 continue
 
+        # ارسال گزارش کلی به مدیر
         if joined > 0:
             await app.send_message(
                 SUDO_ID,
-                f"✅ با موفقیت به {joined} لینک جدید جوین شدم!\n📎 آخرین لینک: {links[-1]}"
+                f"✅ با موفقیت به {joined} لینک جدید جوین شدم!\n📎 آخرین لینک: {last_link}"
             )
         elif failed > 0:
             await app.send_message(
                 SUDO_ID,
-                f"❌ نتونستم به {failed} تا لینک جوین شم (جزئیات بالا ارسال شد)"
+                f"❌ نتوانستم به {failed} لینک جوین شوم (جزئیات بالا ارسال شد)"
             )
 
     except Exception as e:
+        print(f"❌ خطای کلی در بررسی لینک‌ها: {e}")
         await app.send_message(SUDO_ID, f"⚠️ خطا کلی در بررسی لینک‌ها:\n`{e}`")
 # ===============================
 #     اجرای ربات
