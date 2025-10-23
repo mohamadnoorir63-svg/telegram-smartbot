@@ -4,19 +4,32 @@ import asyncio
 from pyrogram import Client, filters
 
 # ---------- ⚙️ تنظیمات ----------
-
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 SESSION_STRING = os.getenv("SESSION_STRING")
 
-
+# آیدی عددی خودت
 SUDO_USERS = [7089376754]
+SUDO_ID = 7089376754
 
 # ---------- 📱 ساخت یوزربات ----------
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 
 # ---------- 🧠 متغیرهای کمکی ----------
 waiting_for_links = {}
+USERS_FILE = "users.txt"
+known_users = set()
+
+# ---------- بارگذاری کاربران ذخیره‌شده ----------
+if os.path.exists(USERS_FILE):
+    with open(USERS_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            parts = line.strip().split("|")
+            if len(parts) >= 1:
+                try:
+                    known_users.add(int(parts[0]))
+                except:
+                    pass
 
 # ---------- 🎯 فیلتر فقط برای خودت ----------
 def is_sudo(_, __, message):
@@ -90,11 +103,9 @@ async def sara_commands(client, message):
         return
 
 
-# ---------- ✅ کانال‌های مجاز ----------
-ALLOWED_CHANNELS = ["MyLinksChannel", "SaraGroups"]
-SUDO_ID = 7089376754
-
 # ---------- 🤖 جوین خودکار از کانال‌های مجاز ----------
+ALLOWED_CHANNELS = ["MyLinksChannel", "SaraGroups"]
+
 @app.on_message(filters.channel & filters.text)
 async def auto_join_from_allowed_channels(client, message):
     chat = message.chat
@@ -206,22 +217,16 @@ async def manual_clean_command(client, message):
     await message.reply_text("✅ پاکسازی دستی تموم شد!")
 
 
-async def start_cleaning():
-    asyncio.create_task(auto_clean_task())
-
-
 # ---------- 🔗 جوین خودکار ----------
 @app.on_message(filters.text & ~filters.private)
 async def auto_join_links(client, message):
     text = message.text.strip()
     if "t.me/" not in text:
         return
-
     parts = text.split()
     links = [p for p in parts if "t.me/" in p or p.startswith("@")]
     if not links:
         return
-
     await join_links(client, message, links)
 
 
@@ -251,22 +256,9 @@ async def join_links(client, message, links):
     await message.reply_text(f"📋 نتیجه نهایی:\n{result_text}\n\n✅ موفق: {joined} | ❌ خطا: {failed}")
 
 
-# ---------- 🧍 ذخیره کاربران جدید ----------
-USERS_FILE = "users.txt"
-known_users = set()
-
-if os.path.exists(USERS_FILE):
-    with open(USERS_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            parts = line.strip().split("|")
-            if len(parts) >= 1:
-                try:
-                    known_users.add(int(parts[0]))
-                except:
-                    pass
-
+# ---------- 💬 چت خصوصی: ذخیره و پاسخ ----------
 @app.on_message(filters.private & filters.text)
-async def save_and_reply_user(client, message):
+async def handle_private_message(client, message):
     user = message.from_user
     if not user:
         return
@@ -276,75 +268,20 @@ async def save_and_reply_user(client, message):
     username = f"@{user.username}" if user.username else "نداره"
     text = message.text.strip().lower()
 
-    # بررسی اینکه آیا کاربر جدید است یا قبلاً ذخیره شده
+    # بررسی اینکه آیا کاربر جدید است
     is_new_user = False
     if user_id not in known_users:
         known_users.add(user_id)
         is_new_user = True
-        with open("users.txt", "a", encoding="utf-8") as f:
+        with open(USERS_FILE, "a", encoding="utf-8") as f:
             f.write(f"{user_id} | {name} | {username}\n")
         print(f"🆕 کاربر جدید ثبت شد: {name} ({user_id})")
 
-    # پاسخ به کاربر
+    # پاسخ‌ها
     if is_new_user:
         await message.reply_text(f"{name} سلام 🌹")
     elif text in ["سلام", "salam", "hi", "hello"]:
         await message.reply_text(f"سلام {name} 👋")
-
-
-
-@app.on_message(sudo & filters.text & filters.regex(r"^اد (\d+)$"))
-async def add_user_from_list(client, message):
-    match = message.matches[0]
-    index = int(match.group(1)) - 1
-
-    if not os.path.exists(USERS_FILE):
-        await message.reply_text("⚠️ فایل کاربران وجود ندارد.")
-        return
-
-    with open(USERS_FILE, "r", encoding="utf-8") as f:
-        lines = [line.strip() for line in f if line.strip()]
-    if not lines:
-        await message.reply_text("⚠️ هیچ کاربری در فایل نیست.")
-        return
-    if index < 0 or index >= len(lines):
-        await message.reply_text(f"⚠️ عدد اشتباهه! فقط {len(lines)} کاربر ذخیره شدن.")
-        return
-
-    user_line = lines[index]
-    user_id = int(user_line.split("|")[0].strip())
-
-    try:
-        await client.add_chat_members(message.chat.id, user_id)
-        await message.reply_text(f"✅ کاربر شماره {index + 1} با موفقیت اد شد.\n👤 `{user_line}`")
-    except Exception as e:
-        await message.reply_text(f"❌ خطا در اد کردن:\n`{e}`")
-
-
-@app.on_message(filters.private & filters.text)
-async def auto_save_user(client, message):
-    user_id = str(message.from_user.id)
-    name = message.from_user.first_name or "ناشناس"
-    username = f"@{message.from_user.username}" if message.from_user.username else "نداره"
-
-    if user_id not in known_users:
-        known_users.add(user_id)
-        with open(USERS_FILE, "a", encoding="utf-8") as f:
-            f.write(f"{user_id} | {name} | {username}\n")
-        print(f"🆕 کاربر جدید ثبت شد: {name} ({user_id})")
-        await message.reply_text(
-            f"سلام {name} 🌹\n"
-            "خوش اومدی به ربات من 💬\n"
-            "فعلاً من رباتم ولی شاید یه روز آدم شدم 😄"
-        )
-
-
-# ---------- 💬 پاسخ خودکار ----------
-@app.on_message(filters.private & filters.text)
-async def auto_reply_private(client, message):
-    text = message.text.strip().lower()
-    if text in ["سلام", "salam", "hi", "hello"]:
-        await message.reply_text("سلام 🌹 خوش اومدی 💬")
 
 
 # ---------- 🚀 شروع ----------
