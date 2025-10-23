@@ -1,6 +1,6 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-import yt_dlp, asyncio, os
+import requests, os
 
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
@@ -8,48 +8,19 @@ SESSION_STRING = os.getenv("SESSION_STRING")
 
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 
-def download_audio(query):
-    os.makedirs("downloads", exist_ok=True)
-    search_sites = [
-        f"scsearch1:{query}",
-        f"ytsearchmusic1:{query}",
-        f"mixcloud:{query}",
-        f"ytsearch1:{query} audio -youtube"
-    ]
-
-    last_error = None
-    for site in search_sites:
-        try:
-            ydl_opts = {
-                "format": "bestaudio/best",
-                "outtmpl": "downloads/%(title)s.%(ext)s",
-                "quiet": True,
-                "noplaylist": True,
-                "ignoreerrors": True,
-                "postprocessors": [{
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": "192",
-                }],
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(site, download=True)
-                # گاهی info خالی یا None میاد
-                if not info:
-                    continue
-                if "entries" in info:
-                    entries = [e for e in info.get("entries", []) if e]
-                    if not entries:
-                        continue
-                    info = entries[0]
-                filename = os.path.splitext(ydl.prepare_filename(info))[0] + ".mp3"
-                abs_path = os.path.abspath(filename)
-                if os.path.exists(abs_path):
-                    return abs_path, info.get("title", query)
-        except Exception as e:
-            last_error = e
-            continue
-    raise Exception(f"هیچ آهنگی برای '{query}' پیدا نشد یا همه منابع خطا دادن.\n{last_error}")
+def search_deezer(query):
+    url = f"https://api.deezer.com/search?q={query}"
+    r = requests.get(url)
+    if r.status_code != 200:
+        raise Exception("ارتباط با سرور Deezer برقرار نشد.")
+    data = r.json().get("data", [])
+    if not data:
+        raise Exception(f"هیچ آهنگی برای '{query}' پیدا نشد.")
+    track = data[0]
+    title = track["title"]
+    artist = track["artist"]["name"]
+    preview = track["preview"]  # لینک mp3 کوتاه (۳۰ ثانیه‌ای ولی آزاد)
+    return preview, f"{artist} - {title}"
 
 @app.on_message(filters.text & filters.group)
 async def send_music(client, message):
@@ -59,22 +30,18 @@ async def send_music(client, message):
     if not query:
         return
 
-    m = await message.reply("🎧 در حال جست‌وجو در منابع آزاد و دانلود آهنگ...")
+    m = await message.reply("🎧 در حال جستجو در Deezer...")
 
     try:
-        file_path, title = await asyncio.to_thread(download_audio, query)
+        file_url, title = search_deezer(query)
         await message.reply_audio(
-            audio=file_path,
-            caption=f"🎶 آهنگ شما آماده است:\n**{title}**",
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🌐 جستجو در گوگل", url=f"https://www.google.com/search?q={query.replace(' ','+')}+mp3")]]
-            ),
+            audio=file_url,
+            caption=f"🎶 آهنگ شما:\n**{title}**",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎧 پخش در Deezer", url=f"https://www.deezer.com/search/{query.replace(' ', '+')}")]
+            ])
         )
         await m.delete()
-        try:
-            os.remove(file_path)
-        except:
-            pass
     except Exception as e:
         await m.edit(f"❌ خطا:\n`{e}`")
 
