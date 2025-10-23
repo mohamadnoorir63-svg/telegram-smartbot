@@ -1,6 +1,6 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-import yt_dlp, asyncio, os
+import requests, os, re
 
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
@@ -8,34 +8,30 @@ SESSION_STRING = os.getenv("SESSION_STRING")
 
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 
-# 📥 دانلود از YouTube به MP3
-def download_audio(query):
-    os.makedirs("downloads", exist_ok=True)
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "outtmpl": "downloads/%(title)s.%(ext)s",
-        "noplaylist": True,
-        "quiet": True,
-        "geo_bypass": True,
-        "age_limit": 0,
-        "extract_flat": False,
-        "default_search": "ytsearch1",  # جستجوی خودکار در یوتیوب
-        "postprocessors": [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "mp3",
-            "preferredquality": "192",
-        }],
-    }
+def get_mp3_link(query):
+    """دریافت لینک MP3 از API آزاد"""
+    search_url = f"https://ytsearch.ai/api/search?q={query.replace(' ', '+')}"
+    try:
+        res = requests.get(search_url, timeout=10)
+        data = res.json().get("data", [])
+        if not data:
+            raise Exception("هیچ نتیجه‌ای پیدا نشد.")
+        video_id = data[0]["id"]
+        title = data[0]["title"]
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(query, download=True)
-        if "entries" in info:
-            info = info["entries"][0]
-        filename = os.path.splitext(ydl.prepare_filename(info))[0] + ".mp3"
-        abs_path = os.path.abspath(filename)
-    return abs_path, info.get("title", "Unknown Title")
+        # گرفتن لینک دانلود mp3 از سایت SnapSave
+        api_url = f"https://api.snappea.com/v1/video/details?url=https://www.youtube.com/watch?v={video_id}"
+        info = requests.get(api_url, timeout=10).json()
+        links = info.get("videoInfo", {}).get("audioStreams", [])
+        mp3_links = [x["url"] for x in links if "audio" in x.get("mimeType", "")]
 
-# 🎧 پاسخ به همه (گروه + پیوی)
+        if not mp3_links:
+            raise Exception("هیچ لینک mp3 موجود نیست.")
+
+        return mp3_links[0], title
+    except Exception as e:
+        raise Exception(f"خطا در دریافت آهنگ: {e}")
+
 @app.on_message(filters.text)
 async def send_music(client, message):
     text = message.text.strip().lower()
@@ -44,28 +40,23 @@ async def send_music(client, message):
     if not query:
         return
 
-    m = await message.reply("🎵 در حال جستجو و دانلود آهنگ از YouTube...")
+    m = await message.reply("🎧 در حال جستجو و آماده‌سازی آهنگ...")
 
     try:
-        file_path, title = await asyncio.to_thread(download_audio, query)
+        mp3_url, title = get_mp3_link(query)
 
         await message.reply_audio(
-            audio=file_path,
-            caption=f"🎶 آهنگ شما آماده است:\n**{title}**",
+            audio=mp3_url,
+            caption=f"🎶 آهنگ شما:\n**{title}**",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🎧 منبع", url=f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}")]
             ])
         )
+
         await m.delete()
 
-        # پاک‌کردن فایل بعد از ارسال (برای جلوگیری از پر شدن حافظه Heroku)
-        try:
-            os.remove(file_path)
-        except:
-            pass
-
     except Exception as e:
-        await m.edit(f"❌ خطا در دانلود:\n`{e}`")
+        await m.edit(f"❌ خطا:\n`{e}`")
 
-print("🎧 Universal Music Bot Online...")
+print("🎧 Music Downloader (API Mode) Online...")
 app.run()
