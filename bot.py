@@ -198,9 +198,13 @@ async def auto_join_links(_, message: Message):
 @app.on_message(filters.command("stats"))
 async def stats(_, message: Message):
     try:
+        # گرفتن اطلاعات فرستنده و مدیر
         sender_id = message.from_user.id if message.from_user else None
+        me = await app.get_me()  # گرفتن اطلاعات اکانت فعلی
+        sudo_name = f"{me.first_name or ''} {me.last_name or ''}".strip()
 
-        dialogs = [d async for d in app.get_dialogs()]  # همه چت‌ها رو بگیر
+        # جمع‌آوری آمار چت‌ها
+        dialogs = [d async for d in app.get_dialogs()]
         groups = sum(1 for d in dialogs if d.chat.type == "group")
         privates = sum(1 for d in dialogs if d.chat.type == "private")
         channels = sum(1 for d in dialogs if d.chat.type in ["supergroup", "channel"])
@@ -208,6 +212,7 @@ async def stats(_, message: Message):
         total_users = len(users_data)
         total_links = len(links_data)
 
+        # ساخت خروجی نهایی
         text = f"""
 📊 **آمار ربات:**
 
@@ -218,7 +223,8 @@ async def stats(_, message: Message):
 🔗 لینک‌های جوین‌شده: `{total_links}`
 
 🆔 آیدی فرستنده: `{sender_id}`
-⚙️ مدیریت تنظیم‌شده: `{SUDO_ID}`
+👑 مدیر فعلی سشن: `{sudo_name}` (`{me.id}`)
+⚙️ مدیریت تنظیم‌شده در ENV: `{SUDO_ID}`
 """
         await message.reply_text(text)
     except Exception as e:
