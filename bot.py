@@ -237,25 +237,32 @@ async def join_links(client, message, links):
     results = []
 
     for link in links:
+        link = link.strip().replace(" ", "").replace("\u200c", "")
+        if not link:
+            continue
+
         try:
-            if link.startswith("https://t.me/") or link.startswith("http://t.me/"):
+            if "joinchat" in link or link.startswith("https://t.me/+"):
+                await client.join_chat(link)
+            elif link.startswith("https://t.me/") or link.startswith("http://t.me/"):
                 await client.join_chat(link)
             elif link.startswith("@"):
-                username = link.replace("@", "")
-                await client.join_chat(username)
+                await client.join_chat(link.replace("@", ""))
             else:
                 results.append(f"⚠️ لینک نامعتبر: {link}")
                 continue
+
             joined += 1
             results.append(f"✅ وارد شدم → {link}")
+
         except Exception as e:
             failed += 1
             results.append(f"❌ خطا برای {link}: {e}")
 
-    result_text = "\n".join(results[-20:]) or "هیچ نتیجه‌ای ثبت نشد."
-    await message.reply_text(f"📋 نتیجه نهایی:\n{result_text}\n\n✅ موفق: {joined} | ❌ خطا: {failed}")
-
-
+    text = "\n".join(results[-10:]) or "هیچ نتیجه‌ای ثبت نشد."
+    await message.reply_text(
+        f"📋 نتیجه نهایی:\n{text}\n\n✅ موفق: {joined} | ❌ خطا: {failed}"
+    )
 # ---------- 💬 چت خصوصی: ذخیره و پاسخ ----------
 @app.on_message(filters.private & filters.text)
 async def handle_private_message(client, message):
