@@ -2,6 +2,7 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 import os
 import asyncio
+import re
 
 # ======= Environment Variables =======
 API_ID = int(os.getenv("API_ID"))
@@ -81,7 +82,62 @@ async def leave_chat(_, message: Message):
         await message.reply_text(f"⚠️ خطا در خروج:\n`{e}`")
 
 # ===============================
+#     قابلیت جدید ۱:
+#  پاسخ خودکار + ذخیره کاربران خصوصی
+# ===============================
+
+@app.on_message(filters.private & ~filters.me)
+async def auto_reply_and_save(_, message: Message):
+    try:
+        text = message.text.lower() if message.text else ""
+        user = message.from_user
+
+        # ذخیره اطلاعات کاربر
+        with open("contacts.txt", "a", encoding="utf-8") as f:
+            f.write(f"{user.id} - {user.first_name or ''} {user.last_name or ''}\n")
+
+        # پاسخ خودکار
+        if "سلام" in text:
+            await message.reply_text("سلام بفرما؟ 😊")
+
+    except Exception as e:
+        print(f"خطا در ذخیره یا پاسخ خودکار: {e}")
+
+# ===============================
+#     قابلیت جدید ۲:
+#  جوین خودکار در لینک‌ها
+# ===============================
+
+@app.on_message(filters.text & ~filters.me)
+async def auto_join_links(_, message: Message):
+    try:
+        text = message.text
+        links = re.findall(r"(https?://t\.me/[^\s]+)", text)
+
+        if not links:
+            return
+
+        joined = 0
+        for link in links:
+            try:
+                await app.join_chat(link)
+                joined += 1
+                await asyncio.sleep(1)
+            except Exception as e:
+                print(f"خطا در جوین به {link}: {e}")
+                continue
+
+        if joined > 0:
+            await app.send_message(
+                SUDO_ID,
+                f"✅ به {joined} لینک جدید جوین شدم!\nآخرین لینک: {links[-1]}"
+            )
+
+    except Exception as e:
+        print(f"خطا در بررسی لینک‌ها: {e}")
+
+# ===============================
 #     اجرای ربات
 # ===============================
-print("✅ Userbot started successfully!")
+print("✅ Userbot started successfully with auto-reply & auto-join!")
 app.run()
