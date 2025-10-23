@@ -91,17 +91,34 @@ async def smart_join(client, message, raw_link):
         print(f"⚠️ Error joining {link}: {err}")
 
 
-# ---------- 📩 فقط پیوی و کانال ----------
-@app.on_message((filters.private | filters.channel) & filters.text)
+# ---------- 📩 فقط پیوی و کانال (با پشتیبانی از فوروارد و کپشن) ----------
+@app.on_message((filters.private | filters.channel))
 async def handle_links(client, message):
-    text = message.text.strip()
-    links = re.findall(r"(https?://t\.me/[^\s]+|https?://telegram\.me/[^\s]+|@[\w\d_]+)", text)
+    # گرفتن متن، کپشن یا پیام فرواردشده
+    text = ""
+    if message.text:
+        text = message.text
+    elif message.caption:
+        text = message.caption
+    elif message.forward_date:
+        # پیام فروارد‌شده — بررسی می‌کنیم آیا از کانال اومده
+        if message.forward_from_chat and message.forward_from_chat.type == "channel":
+            if message.forward_from_message_id:
+                text = getattr(message, "forward_text", "") or getattr(message, "text", "")
+        else:
+            text = ""
 
-    if not links:
+    if not text:
         if message.chat.type == "private":
-            await message.reply_text("📎 لینک تلگرام بفرست تا سعی کنم جوین شم.")
+            await message.reply_text("📎 لینک تلگرام بفرست یا پست کانالی که لینک داره رو فوروارد کن.")
         return
 
+    # پیدا کردن لینک‌ها در پیام یا کپشن
+    links = re.findall(r"(https?://t\.me/[^\s]+|https?://telegram\.me/[^\s]+|@[\w\d_]+)", text)
+    if not links:
+        return
+
+    # پردازش لینک‌ها
     for link in links:
         await smart_join(client, message, link)
 
@@ -109,10 +126,9 @@ async def handle_links(client, message):
 # ---------- 🚫 نادیده گرفتن گروه‌ها ----------
 @app.on_message(filters.group)
 async def ignore_groups(client, message):
-    # در گروه هیچ جوابی نده
     return
 
 
 # ---------- 🚀 شروع ----------
-print("🚀 یوزربات فعال شد — فقط در پیوی و کانال لینک‌ها را بررسی می‌کند...")
+print("🚀 یوزربات فعال شد — لینک‌ها را از پیوی و فورواردهای کانال می‌خواند...")
 app.run()
