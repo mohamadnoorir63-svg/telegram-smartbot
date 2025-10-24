@@ -1,46 +1,53 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-import yt_dlp, asyncio, os
+import requests, re, os, asyncio
 
-# 🔑 اطلاعات از محیط Heroku
+# 🔑 متغیرهای Heroku
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 SESSION_STRING = os.getenv("SESSION_STRING")
 
-# 📱 اتصال یوزربات
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 
-# 📂 پوشه دانلود
-os.makedirs("downloads", exist_ok=True)
+# 🎵 توابع جستجو از منابع آزاد
+def search_music_sources(query):
+    # منابع آزاد MP3
+    sources = [
+        f"https://pixabay.com/api/audio/?key=40177437-bd6bffea2e3a4ef7e50e0f9e4&q={query.replace(' ', '+')}",
+        f"https://api.jamendo.com/v3.0/tracks/?client_id=49a8a3cf&format=jsonpretty&limit=1&namesearch={query.replace(' ', '+')}",
+        f"https://api.deezer.com/search?q={query.replace(' ', '+')}"
+    ]
 
-# 🎵 تابع دانلود آهنگ از یوتیوب (با کوکی)
-def download_audio(query):
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "quiet": True,
-        "noplaylist": True,
-        "outtmpl": "downloads/%(title)s.%(ext)s",
-        "geo_bypass": True,
-        "age_limit": 0,
-        "default_search": "ytsearch1",
-        "cookiefile": "cookies.txt",   # ✅ اینجا کوکی اضافه شد
-        "postprocessors": [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "mp3",
-            "preferredquality": "192",
-        }],
-    }
+    for url in sources:
+        try:
+            r = requests.get(url, timeout=10)
+            if r.status_code != 200:
+                continue
+            data = r.json()
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(query, download=True)
-        if "entries" in info:
-            info = info["entries"][0]
-        filename = os.path.splitext(ydl.prepare_filename(info))[0] + ".mp3"
-        abs_path = os.path.abspath(filename)
-    return abs_path, info.get("title", "Unknown Title")
+            # Pixabay
+            if "hits" in data and len(data["hits"]) > 0:
+                hit = data["hits"][0]
+                return hit["audio"], hit["tags"]
 
-# 🧠 پاسخ به همه چت‌ها (گروه + پیوی)
-@app.on_message(filters.text)
+            # Jamendo
+            if "results" in data and len(data["results"]) > 0:
+                song = data["results"][0]
+                return song["audio"], song["name"]
+
+            # Deezer
+            if "data" in data and len(data["data"]) > 0:
+                track = data["data"][0]
+                return track["preview"], f"{track['artist']['name']} - {track['title']}"
+
+        except Exception as e:
+            print("❌ خطا در منبع:", e)
+            continue
+
+    return None, None
+
+
+@app.on_message(filters.text & (filters.private | filters.group))
 async def send_music(client, message):
     text = message.text.strip().lower()
     keys = ["آهنگ ", "/آهنگ ", "music ", "/music ", "song ", "/song ", "musik ", "/musik "]
@@ -48,29 +55,25 @@ async def send_music(client, message):
     if not query:
         return
 
-    m = await message.reply("🎧 در حال جستجو و دانلود آهنگ... لطفاً صبر کنید 🎵")
+    m = await message.reply("🎧 در حال جستجو برای آهنگ...")
 
     try:
-        file_path, title = await asyncio.to_thread(download_audio, query)
+        file_url, title = await asyncio.to_thread(search_music_sources, query)
+        if not file_url:
+            raise Exception("هیچ فایل قابل دانلودی پیدا نشد 😔")
 
         await message.reply_audio(
-            audio=file_path,
-            caption=f"🎶 آهنگ شما آماده است:\n**{title}**",
+            audio=file_url,
+            caption=f"🎶 آهنگ شما:\n**{title}**",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🎧 YouTube", url=f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}")]
+                [InlineKeyboardButton("🌐 منبع پخش", url=file_url)]
             ])
         )
-
         await m.delete()
 
-        # پاک‌سازی بعد از ارسال
-        try:
-            os.remove(file_path)
-        except:
-            pass
-
     except Exception as e:
-        await m.edit(f"❌ خطا در دانلود:\n`{e}`")
+        await m.edit(f"❌ خطا:\n`{e}`")
 
-print("🎧 Music Downloader (yt-dlp + cookies) Online...")
+
+print("🎧 Universal Music Sender Online...")
 app.run()
