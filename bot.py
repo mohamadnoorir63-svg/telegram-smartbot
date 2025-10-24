@@ -4,12 +4,12 @@ from pytgcalls import GroupCallFactory
 from pytgcalls.types import AudioPiped
 import requests, re, os, asyncio, yt_dlp
 
-# 🧩 متغیرهای محیطی Heroku
+# 🧩 تنظیمات از Heroku Config Vars
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 SESSION_STRING = os.getenv("SESSION_STRING")
 
-# 🎧 راه‌اندازی Pyrogram و تماس صوتی
+# 🎧 راه‌اندازی کلاینت
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 call = GroupCallFactory(app).get_file_group_call()
 
@@ -50,7 +50,7 @@ def search_sources(query):
 
     return None, None
 
-# ==================== 📥 دانلود آهنگ برای پخش ==================== #
+# ==================== 📥 دانلود آهنگ ==================== #
 def download_audio(url):
     os.makedirs("downloads", exist_ok=True)
     ydl_opts = {
@@ -71,7 +71,7 @@ def download_audio(url):
             return os.path.join("downloads", file)
     return None
 
-# ==================== 🎧 هندل پیام پخش آهنگ ==================== #
+# ==================== 🎧 پخش آهنگ در چت ==================== #
 @app.on_message(filters.text & (filters.private | filters.group))
 async def play_music(client, message):
     text = message.text.strip().lower()
@@ -80,7 +80,7 @@ async def play_music(client, message):
     if not query:
         return
 
-    m = await message.reply("🎵 در حال جستجو برای آهنگ... لطفاً صبر کنید 🎶")
+    m = await message.reply("🎧 در حال جستجوی آهنگ... لطفاً صبر کنید 🎶")
 
     try:
         file_url, source = await asyncio.to_thread(search_sources, query)
@@ -91,13 +91,12 @@ async def play_music(client, message):
         if not file_path:
             raise Exception("خطا در دانلود فایل mp3")
 
-        # ارسال آهنگ
         await message.reply_audio(
             audio=file_path,
-            caption=f"🎶 آهنگ درخواستی شما:\n**{query}**\n🌐 منبع: {source}",
+            caption=f"🎵 آهنگ درخواستی شما:\n**{query}**\n🌐 منبع: {source}",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🎧 پخش در ویس‌چت", callback_data=f"play|{file_path}")],
-                [InlineKeyboardButton("❌ خروج از ویس", callback_data="leave")]
+                [InlineKeyboardButton("❌ خروج از ویس‌چت", callback_data="leave")]
             ])
         )
         await m.delete()
@@ -105,7 +104,7 @@ async def play_music(client, message):
     except Exception as e:
         await m.edit(f"❌ خطا:\n`{e}`")
 
-# ==================== 🎛 کنترل دکمه‌های پخش ==================== #
+# ==================== 🎚 کنترل دکمه‌های پخش ==================== #
 @app.on_callback_query()
 async def callbacks(client, callback_query):
     data = callback_query.data
@@ -114,11 +113,11 @@ async def callbacks(client, callback_query):
     if data.startswith("play|"):
         file_path = data.split("|", 1)[1]
         await call.join_group_call(chat_id, AudioPiped(file_path))
-        await callback_query.answer("🎧 در حال پخش در ویس‌چت...")
+        await callback_query.answer("🎶 در حال پخش در ویس‌چت...")
 
     elif data == "leave":
         await call.leave_group_call(chat_id)
-        await callback_query.answer("❌ ربات از ویس‌چت خارج شد.")
+        await callback_query.answer("❌ از ویس‌چت خارج شد.")
 
 print("🎧 VoiceChat MusicBot Online...")
 app.run()
