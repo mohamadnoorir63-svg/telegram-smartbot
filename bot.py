@@ -10,28 +10,49 @@ app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION
 
 os.makedirs("downloads", exist_ok=True)
 
-def find_any_music(query):
-    """جست‌وجوی آزاد بین چند سایت موسیقی"""
-    query_encoded = query.replace(" ", "+")
-    possible_results = []
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "*/*",
+    "Connection": "keep-alive",
+    "Referer": "https://google.com/"
+}
 
-    # 1️⃣ Deezer (آهنگ‌های جهانی)
+def try_download(url, filename):
+    """تلاش برای دانلود؛ اگر 403 بده None برمی‌گردونه"""
+    path = os.path.join("downloads", filename)
     try:
-        r = requests.get(f"https://api.deezer.com/search?q={query_encoded}", timeout=8)
-        data = r.json().get("data", [])
-        if data:
-            track = random.choice(data)
-            possible_results.append({
-                "title": f"{track['artist']['name']} - {track['title']}",
-                "url": track["preview"],  # لینک mp3 کوتاه
-                "source": f"https://www.deezer.com/track/{track['id']}"
+        with requests.get(url, headers=HEADERS, stream=True, timeout=20) as r:
+            if r.status_code == 403:
+                return None
+            r.raise_for_status()
+            with open(path, "wb") as f:
+                for chunk in r.iter_content(1024 * 64):
+                    f.write(chunk)
+        return path
+    except Exception:
+        return None
+
+def get_music(query):
+    """جست‌وجو بین منابع مختلف، تا یکی جواب بده"""
+    query_encoded = query.replace(" ", "+")
+    candidates = []
+
+    # Deezer
+    try:
+        res = requests.get(f"https://api.deezer.com/search?q={query_encoded}", timeout=8)
+        data = res.json().get("data", [])
+        for d in data[:3]:
+            candidates.append({
+                "title": f"{d['artist']['name']} - {d['title']}",
+                "url": d["preview"],
+                "source": f"https://www.deezer.com/track/{d['id']}"
             })
     except:
         pass
 
-    # 2️⃣ Jamendo (موزیک آزاد)
+    # Jamendo
     try:
-        r = requests.get(
+        res = requests.get(
             "https://api.jamendo.com/v3.0/tracks/",
             params={
                 "client_id": "ae1a3c56",
@@ -41,79 +62,58 @@ def find_any_music(query):
             },
             timeout=8
         )
-        data = r.json().get("results", [])
-        if data:
-            track = random.choice(data)
-            possible_results.append({
-                "title": f"{track['artist_name']} - {track['name']}",
-                "url": track["audio"],
-                "source": track["shareurl"]
+        data = res.json().get("results", [])
+        for d in data:
+            candidates.append({
+                "title": f"{d['artist_name']} - {d['name']}",
+                "url": d["audio"],
+                "source": d["shareurl"]
             })
     except:
         pass
 
-    # 3️⃣ آهنگ تصادفی در صورت نبود نتیجه
-    if not possible_results:
-        random_fallbacks = [
-            ("Random Vibe - Chillout", "https://cdn.pixabay.com/download/audio/2022/03/15/audio_a7e6e7.mp3?filename=chillout-115546.mp3"),
-            ("Relax Beat - FreeSound", "https://cdn.pixabay.com/download/audio/2022/10/19/audio_61e70a.mp3?filename=relax-beat-122870.mp3"),
-            ("Funny Loop", "https://cdn.pixabay.com/download/audio/2021/09/02/audio_9c12ab.mp3?filename=funny-loop-110416.mp3")
-        ]
-        name, url = random.choice(random_fallbacks)
-        possible_results.append({"title": name, "url": url, "source": "https://pixabay.com/music"})
+    # fallback های سالم از CDNهای عمومی
+    fallback = [
+        ("Random Vibe - Chillout", "https://files.freemusicarchive.org/storage-freemusicarchive-org/music/no_curator/Scott_Holmes_Music/Happy_Music/Scott_Holmes_Music_-_01_-_Happy_Music.mp3"),
+        ("Relax Beat - FreeSound", "https://files.freemusicarchive.org/storage-freemusicarchive-org/music/no_curator/Komiku/It_Makes_Me_Happy/Komiku_-_01_-_Its_Gonna_Be_Okay.mp3"),
+        ("Funny Loop", "https://files.freemusicarchive.org/storage-freemusicarchive-org/music/no_curator/Lobo_Loco/Sunny_Days/Lobo_Loco_-_02_-_Walking_Around_ID_1291.mp3"),
+    ]
+    for name, url in fallback:
+        candidates.append({"title": name, "url": url, "source": "https://freemusicarchive.org"})
 
-    return random.choice(possible_results)
+    # تلاش برای دانلود تا یکی جواب بده
+    for c in candidates:
+        filename = c["title"].replace("/", "_") + ".mp3"
+        path = try_download(c["url"], filename)
+        if path:
+            return c, path
 
-def download_file(url, filename):
-    """دانلود فایل MP3 با headers شبیه مرورگر"""
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "*/*",
-        "Connection": "keep-alive",
-        "Referer": "https://pixabay.com/",
-    }
-
-    path = os.path.join("downloads", filename)
-    with requests.get(url, headers=headers, stream=True, timeout=30) as r:
-        r.raise_for_status()
-        with open(path, "wb") as f:
-            for chunk in r.iter_content(1024 * 64):
-                f.write(chunk)
-    return path
+    raise Exception("هیچ فایل قابل دانلودی پیدا نشد (همه لینک‌ها مسدود بودن).")
 
 @app.on_message(filters.text)
-async def send_music(client, message):
+async def music_handler(client, message):
     text = message.text.strip()
     keys = ["آهنگ ", "/آهنگ ", "music ", "/music ", "song ", "/song "]
     query = next((text[len(k):].strip() for k in keys if text.lower().startswith(k)), None)
     if not query:
         return
 
-    m = await message.reply("🎧 در حال جستجو و دانلود آهنگ...")
+    m = await message.reply("🎧 در حال جستجو بین منابع آزاد موسیقی...")
 
     try:
-        result = find_any_music(query)
-        filename = result["title"].replace("/", "_") + ".mp3"
-        filepath = download_file(result["url"], filename)
-
+        info, path = get_music(query)
         await message.reply_audio(
-            audio=filepath,
-            caption=f"🎵 **{result['title']}**",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🌐 منبع", url=result["source"])]
-            ])
+            audio=path,
+            caption=f"🎶 **{info['title']}**",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🌐 منبع", url=info['source'])]])
         )
-
         await m.delete()
-
-        # پاک کردن بعد از ارسال
         try:
-            os.remove(filepath)
+            os.remove(path)
         except:
             pass
-
     except Exception as e:
         await m.edit(f"❌ خطا:\n`{e}`")
 
-print("🎧 Universal Music Finder (403 Fixed) Online...")
+print("🎧 Universal Music Finder (No-403 Mode) Online...")
 app.run()
