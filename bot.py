@@ -2,15 +2,14 @@ from pyrogram import Client, filters
 import os, asyncio, yt_dlp, re
 
 # ================== ⚙️ تنظیمات ==================
-API_ID = int(os.getenv("API_ID", "0"))        # عدد API ID
-API_HASH = os.getenv("API_HASH", "")          # API HASH
-SESSION = os.getenv("SESSION_STRING", "")     # Session string از Pyrogram
+API_ID = int(os.getenv("API_ID", "0"))
+API_HASH = os.getenv("API_HASH", "")
+SESSION = os.getenv("SESSION_STRING", "")
 
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION)
 
 DOWNLOAD_PATH = "downloads"
 os.makedirs(DOWNLOAD_PATH, exist_ok=True)
-
 
 # ================== 🎵 تابع دانلود از چند منبع ==================
 def download_precise(query: str):
@@ -79,7 +78,7 @@ async def on_message(client, message):
         file_path, title, source = await loop.run_in_executor(None, download_precise, query)
 
         if not file_path or not os.path.exists(file_path):
-            return await m.edit("❌ نتیجه‌ای پیدا نشد یا دانلود ناموفق بود 😔")
+            return await m.edit("❌ هیچ نتیجه‌ای پیدا نشد یا دانلود ناموفق بود 😔")
 
         await message.reply_audio(
             audio=file_path,
@@ -100,7 +99,7 @@ async def main():
     me = await app.get_me()
     print(f"✅ Logged in as: {me.first_name} ({me.id})")
     print("📢 آماده دریافت پیام از همه کاربران...")
-    await asyncio.Future()  # نگه داشتن تا ابد
+    await asyncio.Future()  # نگه داشتن دائمی
 
 if __name__ == "__main__":
     asyncio.run(main())
