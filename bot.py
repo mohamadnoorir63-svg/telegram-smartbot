@@ -1,14 +1,29 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-import requests, re, os, asyncio, yt_dlp
+import requests, re, os, asyncio, yt_dlp, sys
 
-API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH"))
-SESSION_STRING = os.getenv("SESSION_STRING")
+# ================= ⚙️ Environment Validation ================= #
+def safe_get_env(var_name, default=None, required=False):
+    value = os.getenv(var_name)
+    if not value:
+        msg = f"[⚠️ Missing ENV] {var_name} not found."
+        print(msg)
+        if required:
+            raise SystemExit(msg)
+        return default
+    return value
+
+try:
+    API_ID = int(safe_get_env("API_ID", required=True))
+    API_HASH = safe_get_env("API_HASH", required=True)
+    SESSION_STRING = safe_get_env("SESSION_STRING", required=True)
+except Exception as e:
+    print(f"❌ Configuration Error: {e}")
+    sys.exit(1)
 
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 
-# ================= 🎵 جستجو در منابع مختلف ================= #
+# ================= 🔍 Multi-Source Music Search ================= #
 def search_music(query):
     query_enc = query.replace(" ", "+")
     sources = [
@@ -48,7 +63,7 @@ def search_music(query):
 
     return None, None
 
-# ================= 📥 دانلود آهنگ ================= #
+# ================= 📥 Audio Downloader ================= #
 def download_audio(url):
     os.makedirs("downloads", exist_ok=True)
     ydl_opts = {
@@ -62,17 +77,17 @@ def download_audio(url):
             "preferredquality": "192",
         }],
     }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        try:
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             file_path = ydl.prepare_filename(info)
             mp3_path = os.path.splitext(file_path)[0] + ".mp3"
             return mp3_path
-        except Exception as e:
-            print(f"yt_dlp error: {e}")
-            return None
+    except Exception as e:
+        print(f"yt_dlp Error: {e}")
+        return None
 
-# ================= ✉️ هندل دستور "آهنگ" ================= #
+# ================= 💬 Message Handler ================= #
 @app.on_message(filters.text & (filters.private | filters.group))
 async def send_music(client, message):
     text = message.text.strip()
@@ -80,6 +95,9 @@ async def send_music(client, message):
         return
 
     query = text[len("آهنگ "):].strip()
+    if not query:
+        return await message.reply("❗ لطفاً بعد از کلمه 'آهنگ' نام موزیک را بنویس.")
+
     m = await message.reply("🎧 در حال جستجو برای آهنگ...")
 
     try:
@@ -103,6 +121,7 @@ async def send_music(client, message):
 
     except Exception as e:
         await m.edit(f"❌ خطا:\n`{e}`")
+        print(f"[ERROR] {e}")
 
-print("🎵 Music Downloader Bot Online...")
+print("🎵 Music Downloader Bot Online and Stable...")
 app.run()
