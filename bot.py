@@ -1,121 +1,146 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-import requests, os, asyncio, yt_dlp, sys
+import os, asyncio, yt_dlp, sys
 
-# ⚙️ گرفتن تنظیمات محیطی
-def get_env(var, required=False):
-    val = os.getenv(var)
-    if not val and required:
-        raise SystemExit(f"[❌ Missing ENV] {var} not found.")
-    return val
+# -------- ENV چک امن --------
+def need(name):
+    v = os.getenv(name)
+    if not v:
+        raise SystemExit(f"[❌ Missing ENV] {name}")
+    return v
 
 try:
-    API_ID = int(get_env("API_ID", True))
-    API_HASH = get_env("API_HASH", True)
-    SESSION_STRING = get_env("SESSION_STRING", True)
+    API_ID = int(need("API_ID"))
+    API_HASH = need("API_HASH")
+    SESSION_STRING = need("SESSION_STRING")
 except Exception as e:
-    print(f"⚠️ Config Error: {e}")
-    sys.exit(1)
+    print(e); sys.exit(1)
 
 app = Client("music_userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 
-# ==================== 🌍 جستجوی آهنگ ==================== #
-def global_search(query):
-    q = query.replace(" ", "+")
-    
-    # Jamendo API
-    try:
-        jam = requests.get(
-            f"https://api.jamendo.com/v3.0/tracks/?client_id=49a8a3cf&format=jsonpretty&limit=1&namesearch={q}",
-            timeout=5,
-        ).json()
-        res = jam.get("results", [])
-        if res:
-            audio = res[0]["audio"]
-            name = res[0]["artist_name"] + " - " + res[0]["name"]
-            return audio, f"Jamendo ({name})"
-    except Exception:
-        pass
-
-    # FreeSound API
-    try:
-        free = requests.get(
-            f"https://freesound.org/apiv2/search/text/?query={q}&token=L9jPaePcZsYhzbtGcQq2zdYz6m1a2fbC8WeAtu0e",
-            timeout=5,
-        ).json()
-        results = free.get("results", [])
-        if results:
-            link = results[0]["previews"]["preview-hq-mp3"]
-            return link, "FreeSound"
-    except Exception:
-        pass
-
-    # YouTube fallback
-    try:
-        ydl_opts = {"format": "bestaudio/best", "noplaylist": True, "quiet": True}
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"ytsearch1:{query}", download=False)["entries"][0]
-            return info["url"], "YouTube"
-    except Exception:
-        pass
-
-    return None, None
-
-# ==================== 📥 دانلود آهنگ ==================== #
-def download_mp3(url):
+# -------- دانلودگر با چند منبع داخلی yt-dlp --------
+def download_by_query(query: str):
+    """
+    به ترتیب از این منابع امتحان می‌کند:
+    1) scsearch1: (SoundCloud)
+    2) ytmusicsearch1: (YouTube Music)
+    3) ytsearch1: (YouTube)
+    اگر cookies.txt در ریشه باشد، خودکار استفاده می‌شود.
+    """
     os.makedirs("downloads", exist_ok=True)
-    opts = {
+
+    common_opts = {
         "format": "bestaudio/best",
-        "outtmpl": "downloads/%(title)s.%(ext)s",
         "quiet": True,
         "noplaylist": True,
+        "outtmpl": "downloads/%(title)s.%(ext)s",
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
             "preferredcodec": "mp3",
             "preferredquality": "192",
         }],
+        # خطاها باعث توقف نشوند؛ می‌رویم سراغ منبع بعدی
+        "ignoreerrors": True,
+        "retries": 2,
+        "fragment_retries": 2,
+        "geo_bypass": True,
+        "nocheckcertificate": True,
+        # سرعت بهتر روی هرoku
+        "concurrent_fragment_downloads": 3,
     }
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            path = ydl.prepare_filename(info)
-            mp3 = os.path.splitext(path)[0] + ".mp3"
-            return mp3
-    except Exception as e:
-        print(f"[yt_dlp Error] {e}")
-        return None
 
-# ==================== 💬 پیام "آهنگ ..." ==================== #
+    cookiefile = "cookies.txt"
+    if os.path.exists(cookiefile):
+        common_opts["cookiefile"] = cookiefile
+
+    searches = [
+        ("SoundCloud", f"scsearch1:{query}"),
+        ("YouTube Music", f"ytmusicsearch1:{query}"),
+        ("YouTube", f"ytsearch1:{query}"),
+    ]
+
+    last_error = None
+    for source_name, expr in searches:
+        try:
+            with yt_dlp.YoutubeDL(common_opts) as ydl:
+                info = ydl.extract_info(expr, download=True)
+                # در حالت سرچ، info ممکن است playlist-info با entries باشد
+                entry = None
+                if info is None:
+                    continue
+                if "entries" in info and info["entries"]:
+                    # اولین نتیجهٔ سالم
+                    for e in info["entries"]:
+                        if e:
+                            entry = e
+                            break
+                else:
+                    entry = info
+
+                if not entry:
+                    continue
+
+                # مسیر فایل خروجی MP3 را حدس می‌زنیم
+                # yt-dlp نام را بر اساس title می‌سازد
+                title = entry.get("title", "audio")
+                # چون پس‌پردازش MP3 انجام می‌دهیم، خروجی .mp3 است
+                # ولی نام دقیق را با prepare_filename مطمئن‌تر می‌گیریم:
+                # (حالت دانلود=True است، پس فایل باید روی دیسک باشد)
+                # ترفند: دوباره یک بار با download=False فقط برای به‌دست‌آوردن نام:
+                with yt_dlp.YoutubeDL({**common_opts, "download": False}) as y2:
+                    prepared = y2.prepare_filename(entry)
+                mp3_path = os.path.splitext(prepared)[0] + ".mp3"
+                if os.path.exists(mp3_path):
+                    return mp3_path, source_name
+        except Exception as e:
+            last_error = e
+            continue
+
+    # اگر هیچ‌کدام جواب نداد
+    if last_error:
+        print(f"[Downloader last error] {last_error}")
+    return None, None
+
+# -------- هندل پیام --------
 @app.on_message(filters.text & (filters.private | filters.group))
 async def handle_music(client, message):
     text = message.text.strip()
     if not text.startswith("آهنگ "):
         return
+    query = text[6:].strip()
+    if not query:
+        return await message.reply("❗ بعد از «آهنگ» نام موزیک را بنویس.")
 
-    query = text[len("آهنگ "):].strip()
-    m = await message.reply("🎧 در حال جستجوی سریع برای آهنگ...")
+    m = await message.reply("🎧 در حال جستجو و دانلود...")
 
     try:
-        url, source = await asyncio.to_thread(global_search, query)
-        if not url:
-            raise Exception("هیچ آهنگی پیدا نشد 😔")
-
-        file_path = await asyncio.to_thread(download_mp3, url)
+        file_path, source = await asyncio.to_thread(download_by_query, query)
         if not file_path or not os.path.exists(file_path):
-            raise Exception("دانلود فایل با خطا مواجه شد.")
+            raise Exception("هیچ آهنگی پیدا نشد یا دانلود با خطا مواجه شد.")
 
         await message.reply_audio(
             audio=file_path,
             caption=f"🎶 آهنگ شما: **{query}**\n🌐 منبع: {source}",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🌍 منبع", url=url)]])
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("✅ OK", callback_data="ok")]]
+            )
         )
-
         await m.delete()
-        os.remove(file_path)
+        # پاکسازی تا فضای هرُوکو پر نشود
+        try:
+            os.remove(file_path)
+        except Exception:
+            pass
 
     except Exception as e:
         await m.edit(f"❌ خطا:\n`{e}`")
         print(f"[ERROR] {e}")
 
-print("🎵 Fast Global Music Bot Online...")
+# دکمهٔ ساده
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+@app.on_callback_query()
+async def cb(_, cq):
+    await cq.answer("✅")
+
+print("🎵 Multi-Search Music Bot (SC + YTMusic + YT) Online...")
 app.run()
