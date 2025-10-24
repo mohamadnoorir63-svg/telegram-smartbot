@@ -1,6 +1,6 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-import os, asyncio, yt_dlp, sys
+import os, asyncio, yt_dlp, sys, re
 
 # ✅ متغیرهای محیطی
 def need(name):
@@ -56,7 +56,6 @@ def download_precise(query: str):
                 if not info:
                     continue
 
-                # پیدا کردن آهنگ واقعی
                 entry = None
                 if "entries" in info and info["entries"]:
                     for e in info["entries"]:
@@ -69,7 +68,6 @@ def download_precise(query: str):
                 if not entry:
                     continue
 
-                # مسیر فایل MP3
                 title = entry.get("title", "audio")
                 with yt_dlp.YoutubeDL({**common_opts, "download": False}) as y2:
                     prepared = y2.prepare_filename(entry)
@@ -84,10 +82,60 @@ def download_precise(query: str):
 
     return None, None, None
 
+
+# 🎵 تابع مخصوص لینک مستقیم یوتیوب
+def download_from_link(url: str):
+    os.makedirs("downloads", exist_ok=True)
+    opts = {
+        "format": "bestaudio/best",
+        "quiet": True,
+        "noplaylist": True,
+        "outtmpl": "downloads/%(title)s.%(ext)s",
+        "postprocessors": [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "192",
+        }],
+    }
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            title = info.get("title", "audio")
+            mp3_path = os.path.splitext(ydl.prepare_filename(info))[0] + ".mp3"
+            if os.path.exists(mp3_path):
+                return mp3_path, title
+    except Exception as e:
+        print(f"[YT Link Error] {e}")
+    return None, None
+
+
 # 💬 دریافت پیام‌ها
 @app.on_message(filters.text & (filters.private | filters.group))
 async def handle_music(client, message):
     text = message.text.strip()
+
+    # 🎯 اگر لینک یوتیوب فرستاده شده بود
+    yt_match = re.search(r"(https?://)?(www\.)?(youtube\.com|youtu\.be)/[^\s]+", text)
+    if yt_match:
+        url = yt_match.group(0)
+        m = await message.reply("🎧 در حال دانلود MP3 از لینک یوتیوب...")
+        try:
+            file_path, title = await asyncio.to_thread(download_from_link, url)
+            if not file_path:
+                raise Exception("دانلود از لینک انجام نشد 😔")
+
+            await message.reply_audio(
+                audio=file_path,
+                caption=f"🎶 از لینک YouTube:\n**{title}**",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔗 لینک", url=url)]])
+            )
+            await m.delete()
+            os.remove(file_path)
+        except Exception as e:
+            await m.edit(f"❌ خطا در دانلود:\n`{e}`")
+        return
+
+    # 🎵 حالت "آهنگ ..."
     if not text.startswith("آهنگ "):
         return
 
@@ -109,18 +157,17 @@ async def handle_music(client, message):
         )
 
         await m.delete()
-        try:
-            os.remove(file_path)
-        except Exception:
-            pass
+        os.remove(file_path)
 
     except Exception as e:
         await m.edit(f"❌ خطا:\n`{e}`")
         print(f"[ERROR] {e}")
 
+
 @app.on_callback_query()
 async def cb(_, cq):
     await cq.answer("✅")
 
-print("🎵 Precise YouTube Music Bot Online...")
+
+print("🎵 YouTube Link + Music Search Bot Online...")
 app.run()
