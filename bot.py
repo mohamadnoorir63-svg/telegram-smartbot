@@ -2,15 +2,15 @@ from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import requests, re, os, asyncio, yt_dlp, sys
 
-# ================= ⚙️ Environment Validation ================= #
-def safe_get_env(var_name, default=None, required=False):
+# ========== ⚙️ تنظیمات محیطی ========== #
+def safe_get_env(var_name, required=False):
     value = os.getenv(var_name)
     if not value:
         msg = f"[⚠️ Missing ENV] {var_name} not found."
         print(msg)
         if required:
             raise SystemExit(msg)
-        return default
+        return None
     return value
 
 try:
@@ -23,36 +23,28 @@ except Exception as e:
 
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 
-# ================= 🔍 Multi-Source Music Search ================= #
+# ========== 🔍 جستجو در چند منبع ========== #
 def search_music(query):
-    query_enc = query.replace(" ", "+")
+    q = query.replace(" ", "+")
     sources = [
-        f"https://music-fa.com/?s={query_enc}",
-        f"https://ahangbaz.ir/?s={query_enc}",
-        f"https://nex1music.ir/?s={query_enc}",
+        f"https://music-fa.com/?s={q}",
+        f"https://ahangbaz.ir/?s={q}",
+        f"https://nex1music.ir/?s={q}",
     ]
+
     for site in sources:
         try:
             html = requests.get(site, timeout=10).text
-            links = re.findall(r'https?://[^\s"\']+\.mp3', html)
-            if links:
-                return links[0], site
+            mp3_links = re.findall(r'https?://[^\s"\']+\.mp3', html)
+            if mp3_links:
+                return mp3_links[0], site
         except Exception:
             continue
-
-    # Deezer
-    try:
-        r = requests.get(f"https://api.deezer.com/search?q={query_enc}", timeout=10)
-        data = r.json().get("data", [])
-        if data:
-            return data[0]["preview"], "Deezer"
-    except Exception:
-        pass
 
     # Jamendo
     try:
         r = requests.get(
-            f"https://api.jamendo.com/v3.0/tracks/?client_id=49a8a3cf&format=jsonpretty&limit=1&namesearch={query_enc}",
+            f"https://api.jamendo.com/v3.0/tracks/?client_id=49a8a3cf&format=jsonpretty&limit=1&namesearch={q}",
             timeout=10,
         )
         results = r.json().get("results", [])
@@ -61,9 +53,32 @@ def search_music(query):
     except Exception:
         pass
 
+    # MP3Clan (منبع عمومی)
+    try:
+        r = requests.get(f"https://mp3clan.top/search/{q}", timeout=10)
+        links = re.findall(r'https?://[^"\']+\.mp3', r.text)
+        if links:
+            return links[0], "MP3Clan"
+    except Exception:
+        pass
+
+    # YouTube fallback
+    try:
+        ydl_opts = {
+            "format": "bestaudio/best",
+            "noplaylist": True,
+            "quiet": True,
+            "outtmpl": "downloads/%(title)s.%(ext)s",
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"ytsearch1:{query}", download=False)["entries"][0]
+            return info["url"], "YouTube"
+    except Exception:
+        pass
+
     return None, None
 
-# ================= 📥 Audio Downloader ================= #
+# ========== 📥 دانلود آهنگ ========== #
 def download_audio(url):
     os.makedirs("downloads", exist_ok=True)
     ydl_opts = {
@@ -84,10 +99,10 @@ def download_audio(url):
             mp3_path = os.path.splitext(file_path)[0] + ".mp3"
             return mp3_path
     except Exception as e:
-        print(f"yt_dlp Error: {e}")
+        print(f"[yt_dlp Error] {e}")
         return None
 
-# ================= 💬 Message Handler ================= #
+# ========== 💬 دستور "آهنگ ..." ========== #
 @app.on_message(filters.text & (filters.private | filters.group))
 async def send_music(client, message):
     text = message.text.strip()
@@ -96,7 +111,7 @@ async def send_music(client, message):
 
     query = text[len("آهنگ "):].strip()
     if not query:
-        return await message.reply("❗ لطفاً بعد از کلمه 'آهنگ' نام موزیک را بنویس.")
+        return await message.reply("❗ لطفاً بعد از 'آهنگ' نام آهنگ را بنویس.")
 
     m = await message.reply("🎧 در حال جستجو برای آهنگ...")
 
@@ -107,15 +122,14 @@ async def send_music(client, message):
 
         file_path = await asyncio.to_thread(download_audio, url)
         if not file_path or not os.path.exists(file_path):
-            raise Exception("دانلود فایل با خطا مواجه شد")
+            raise Exception("دانلود فایل با خطا مواجه شد یا لینک خراب بود.")
 
         await message.reply_audio(
             audio=file_path,
             caption=f"🎶 آهنگ شما: **{query}**\n🌐 منبع: {source}",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🌍 منبع", url=url)]
-            ])
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🌍 منبع", url=url)]])
         )
+
         await m.delete()
         os.remove(file_path)
 
@@ -123,5 +137,5 @@ async def send_music(client, message):
         await m.edit(f"❌ خطا:\n`{e}`")
         print(f"[ERROR] {e}")
 
-print("🎵 Music Downloader Bot Online and Stable...")
+print("🎵 Global Music Downloader Bot Online...")
 app.run()
