@@ -1,15 +1,15 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pytgcalls import GroupCallFactory
-from pytgcalls.types import AudioPiped
-import requests, re, os, asyncio, yt_dlp
+from pytgcalls.types.input_stream import InputAudioPiped
+import requests, os, asyncio, yt_dlp
 
 # 🧩 تنظیمات از Heroku Config Vars
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 SESSION_STRING = os.getenv("SESSION_STRING")
 
-# 🎧 راه‌اندازی کلاینت
+# 🎧 راه‌اندازی Pyrogram و تماس صوتی
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 call = GroupCallFactory(app).get_file_group_call()
 
@@ -71,7 +71,7 @@ def download_audio(url):
             return os.path.join("downloads", file)
     return None
 
-# ==================== 🎧 پخش آهنگ در چت ==================== #
+# ==================== 🎧 اجرای دستور آهنگ ==================== #
 @app.on_message(filters.text & (filters.private | filters.group))
 async def play_music(client, message):
     text = message.text.strip().lower()
@@ -80,7 +80,7 @@ async def play_music(client, message):
     if not query:
         return
 
-    m = await message.reply("🎧 در حال جستجوی آهنگ... لطفاً صبر کنید 🎶")
+    m = await message.reply("🎶 در حال جستجو و دانلود آهنگ... لطفاً کمی صبر کنید 🎧")
 
     try:
         file_url, source = await asyncio.to_thread(search_sources, query)
@@ -93,7 +93,7 @@ async def play_music(client, message):
 
         await message.reply_audio(
             audio=file_path,
-            caption=f"🎵 آهنگ درخواستی شما:\n**{query}**\n🌐 منبع: {source}",
+            caption=f"🎵 آهنگ شما:\n**{query}**\n🌐 منبع: {source}",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🎧 پخش در ویس‌چت", callback_data=f"play|{file_path}")],
                 [InlineKeyboardButton("❌ خروج از ویس‌چت", callback_data="leave")]
@@ -104,7 +104,7 @@ async def play_music(client, message):
     except Exception as e:
         await m.edit(f"❌ خطا:\n`{e}`")
 
-# ==================== 🎚 کنترل دکمه‌های پخش ==================== #
+# ==================== 🎚 کنترل دکمه‌ها ==================== #
 @app.on_callback_query()
 async def callbacks(client, callback_query):
     data = callback_query.data
@@ -112,8 +112,8 @@ async def callbacks(client, callback_query):
 
     if data.startswith("play|"):
         file_path = data.split("|", 1)[1]
-        await call.join_group_call(chat_id, AudioPiped(file_path))
-        await callback_query.answer("🎶 در حال پخش در ویس‌چت...")
+        await call.join_group_call(chat_id, InputAudioPiped(file_path))
+        await callback_query.answer("🎧 در حال پخش در ویس‌چت...")
 
     elif data == "leave":
         await call.leave_group_call(chat_id)
