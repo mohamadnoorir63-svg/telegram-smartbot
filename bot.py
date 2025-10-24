@@ -18,7 +18,8 @@ except Exception as e:
 
 app = Client("music_userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 
-# 🎧 تابع اصلی دانلود آهنگ
+
+# 🎧 تابع اصلی دانلود آهنگ (اولویت: YouTube → YouTube Music → SoundCloud)
 def download_precise(query: str):
     os.makedirs("downloads", exist_ok=True)
     common_opts = {
@@ -43,10 +44,9 @@ def download_precise(query: str):
     if os.path.exists(cookiefile):
         common_opts["cookiefile"] = cookiefile
 
-    # 🔄 ترتیب جدید: YouTube Music → YouTube → SoundCloud
     sources = [
-        ("YouTube Music", f"ytmusicsearch1:{query}"),
         ("YouTube", f"ytsearch1:{query}"),
+        ("YouTube Music", f"ytmusicsearch1:{query}"),
         ("SoundCloud", f"scsearch1:{query}"),
     ]
 
@@ -84,14 +84,14 @@ def download_precise(query: str):
     return None, None, None
 
 
-# 🎵 تابع مخصوص لینک مستقیم یوتیوب
+# 🎵 دانلود از لینک مستقیم (پشتیبانی از share.google, youtube, music.youtube و غیره)
 def download_from_link(url: str):
     os.makedirs("downloads", exist_ok=True)
 
-    # 🔁 اگر لینک Redirect (مثل share.google) بود
+    # 🔁 اگر لینک redirect شده بود (مثل share.google)
     try:
         r = requests.get(url, allow_redirects=True, timeout=5)
-        if "youtube.com" in r.url or "youtu.be" in r.url:
+        if any(x in r.url for x in ["youtube.com", "youtu.be", "music.youtube.com"]):
             url = r.url
     except Exception as e:
         print(f"[Redirect Error] {e}")
@@ -107,6 +107,7 @@ def download_from_link(url: str):
             "preferredquality": "192",
         }],
     }
+
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
@@ -119,16 +120,16 @@ def download_from_link(url: str):
     return None, None
 
 
-# 💬 دریافت پیام‌ها
-@app.on_message(filters.text & (filters.private | filters.group))
+# 💬 پاسخ به پیام‌ها (کار می‌کند در PV و گروه)
+@app.on_message(filters.text)
 async def handle_music(client, message):
     text = message.text.strip()
 
-    # 🎯 اگر لینک یوتیوب فرستاده شده بود
-    yt_match = re.search(r"(https?://)?(www\.)?(youtube\.com|youtu\.be)/[^\s]+", text)
+    # 🎯 شناسایی هر نوع لینک یوتیوب / موزیک / share.google
+    yt_match = re.search(r"(https?://)?(www\.)?(youtube\.com|youtu\.be|music\.youtube\.com|share\.google|shorts\.youtube\.com)/[^\s]+", text)
     if yt_match:
         url = yt_match.group(0)
-        m = await message.reply("🎧 در حال دانلود MP3 از لینک یوتیوب...")
+        m = await message.reply("🎧 در حال دانلود MP3 از لینک YouTube...")
         try:
             file_path, title = await asyncio.to_thread(download_from_link, url)
             if not file_path:
@@ -145,7 +146,7 @@ async def handle_music(client, message):
             await m.edit(f"❌ خطا در دانلود:\n`{e}`")
         return
 
-    # 🎵 حالت "آهنگ ..."
+    # 🎵 حالت دستور متنی: آهنگ ...
     if not text.startswith("آهنگ "):
         return
 
@@ -153,7 +154,7 @@ async def handle_music(client, message):
     if not query:
         return await message.reply("❗ لطفاً بعد از 'آهنگ' نام آهنگ را بنویس.")
 
-    m = await message.reply("🎧 در حال جستجوی دقیق (YouTube → SoundCloud)...")
+    m = await message.reply("🎧 در حال جستجو در YouTube و SoundCloud...")
 
     try:
         file_path, title, source = await asyncio.to_thread(download_precise, query)
@@ -179,5 +180,5 @@ async def cb(_, cq):
     await cq.answer("✅")
 
 
-print("🎵 YouTube-first Music Bot Online...")
+print("🎵 YouTube + Redirect + Text Search Music Bot Online...")
 app.run()
