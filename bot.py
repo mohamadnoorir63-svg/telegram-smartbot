@@ -65,9 +65,16 @@ def find_any_music(query):
     return random.choice(possible_results)
 
 def download_file(url, filename):
-    """دانلود فایل MP3"""
+    """دانلود فایل MP3 با headers شبیه مرورگر"""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "*/*",
+        "Connection": "keep-alive",
+        "Referer": "https://pixabay.com/",
+    }
+
     path = os.path.join("downloads", filename)
-    with requests.get(url, stream=True, timeout=20) as r:
+    with requests.get(url, headers=headers, stream=True, timeout=30) as r:
         r.raise_for_status()
         with open(path, "wb") as f:
             for chunk in r.iter_content(1024 * 64):
@@ -108,5 +115,5 @@ async def send_music(client, message):
     except Exception as e:
         await m.edit(f"❌ خطا:\n`{e}`")
 
-print("🎧 Universal Music Finder (Local Upload) Online...")
+print("🎧 Universal Music Finder (403 Fixed) Online...")
 app.run()
