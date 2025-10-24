@@ -1,4 +1,7 @@
 pyrogram==2.0.106
 tgcrypto
-requests
+pytgcalls==3.0.0.dev24
+yt-dlp
 aiohttp
+requests
+ffmpeg-python
