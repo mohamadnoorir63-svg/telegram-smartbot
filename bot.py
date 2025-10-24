@@ -1,6 +1,6 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-import os, asyncio, yt_dlp, sys, re
+import os, asyncio, yt_dlp, sys, re, requests
 
 # ✅ متغیرهای محیطی
 def need(name):
@@ -43,10 +43,11 @@ def download_precise(query: str):
     if os.path.exists(cookiefile):
         common_opts["cookiefile"] = cookiefile
 
+    # 🔄 ترتیب جدید: YouTube Music → YouTube → SoundCloud
     sources = [
         ("YouTube Music", f"ytmusicsearch1:{query}"),
-        ("SoundCloud", f"scsearch1:{query}"),
         ("YouTube", f"ytsearch1:{query}"),
+        ("SoundCloud", f"scsearch1:{query}"),
     ]
 
     for source_name, expr in sources:
@@ -86,6 +87,15 @@ def download_precise(query: str):
 # 🎵 تابع مخصوص لینک مستقیم یوتیوب
 def download_from_link(url: str):
     os.makedirs("downloads", exist_ok=True)
+
+    # 🔁 اگر لینک Redirect (مثل share.google) بود
+    try:
+        r = requests.get(url, allow_redirects=True, timeout=5)
+        if "youtube.com" in r.url or "youtu.be" in r.url:
+            url = r.url
+    except Exception as e:
+        print(f"[Redirect Error] {e}")
+
     opts = {
         "format": "bestaudio/best",
         "quiet": True,
@@ -143,7 +153,7 @@ async def handle_music(client, message):
     if not query:
         return await message.reply("❗ لطفاً بعد از 'آهنگ' نام آهنگ را بنویس.")
 
-    m = await message.reply("🎧 در حال جستجوی دقیق برای آهنگ...")
+    m = await message.reply("🎧 در حال جستجوی دقیق (YouTube → SoundCloud)...")
 
     try:
         file_path, title, source = await asyncio.to_thread(download_precise, query)
@@ -169,5 +179,5 @@ async def cb(_, cq):
     await cq.answer("✅")
 
 
-print("🎵 YouTube Link + Music Search Bot Online...")
+print("🎵 YouTube-first Music Bot Online...")
 app.run()
