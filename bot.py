@@ -1,19 +1,18 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pytgcalls import GroupCallFactory
-from pytgcalls.types.input_stream import InputAudioPiped
 import requests, os, asyncio, yt_dlp
 
-# 🧩 تنظیمات از Heroku Config Vars
+# 🧩 متغیرها از Heroku Config Vars
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 SESSION_STRING = os.getenv("SESSION_STRING")
 
-# 🎧 راه‌اندازی Pyrogram و تماس صوتی
+# 🎧 راه‌اندازی یوزربات و تماس صوتی
 app = Client("userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
-call = GroupCallFactory(app).get_file_group_call()
+group_call = GroupCallFactory(app).get_file_group_call()
 
-# ==================== 🎵 جستجوی آهنگ از منابع آزاد ==================== #
+# 🎵 جستجو از منابع آزاد
 def search_sources(query):
     query_enc = query.replace(" ", "+")
     sources = [
@@ -21,36 +20,26 @@ def search_sources(query):
         f"https://api.jamendo.com/v3.0/tracks/?client_id=49a8a3cf&format=jsonpretty&limit=1&namesearch={query_enc}",
         f"https://pixabay.com/api/audio/?key=40177437-bd6bffea2e3a4ef7e50e0f9e4&q={query_enc}"
     ]
-
     for url in sources:
         try:
             r = requests.get(url, timeout=10)
             if r.status_code != 200:
                 continue
             data = r.json()
-
-            # Deezer
             if "data" in data and data["data"]:
                 track = data["data"][0]
                 return track["preview"], f"Deezer ({track['artist']['name']})"
-
-            # Jamendo
             if "results" in data and data["results"]:
                 song = data["results"][0]
                 return song["audio"], "Jamendo"
-
-            # Pixabay
             if "hits" in data and data["hits"]:
                 hit = data["hits"][0]
                 return hit["audio"], "Pixabay"
-
-        except Exception as e:
-            print(f"⚠️ خطا در منبع {url}: {e}")
+        except Exception:
             continue
-
     return None, None
 
-# ==================== 📥 دانلود آهنگ ==================== #
+# 📥 دانلود فایل mp3
 def download_audio(url):
     os.makedirs("downloads", exist_ok=True)
     ydl_opts = {
@@ -71,7 +60,7 @@ def download_audio(url):
             return os.path.join("downloads", file)
     return None
 
-# ==================== 🎧 اجرای دستور آهنگ ==================== #
+# 🎧 هندل دستور آهنگ
 @app.on_message(filters.text & (filters.private | filters.group))
 async def play_music(client, message):
     text = message.text.strip().lower()
@@ -80,7 +69,7 @@ async def play_music(client, message):
     if not query:
         return
 
-    m = await message.reply("🎶 در حال جستجو و دانلود آهنگ... لطفاً کمی صبر کنید 🎧")
+    m = await message.reply("🎶 در حال جستجو و دانلود آهنگ...")
 
     try:
         file_url, source = await asyncio.to_thread(search_sources, query)
@@ -89,7 +78,7 @@ async def play_music(client, message):
 
         file_path = await asyncio.to_thread(download_audio, file_url)
         if not file_path:
-            raise Exception("خطا در دانلود فایل mp3")
+            raise Exception("دانلود فایل با خطا مواجه شد")
 
         await message.reply_audio(
             audio=file_path,
@@ -104,7 +93,7 @@ async def play_music(client, message):
     except Exception as e:
         await m.edit(f"❌ خطا:\n`{e}`")
 
-# ==================== 🎚 کنترل دکمه‌ها ==================== #
+# 🎚 کنترل دکمه‌ها
 @app.on_callback_query()
 async def callbacks(client, callback_query):
     data = callback_query.data
@@ -112,11 +101,11 @@ async def callbacks(client, callback_query):
 
     if data.startswith("play|"):
         file_path = data.split("|", 1)[1]
-        await call.join_group_call(chat_id, InputAudioPiped(file_path))
+        await group_call.join_group_call(chat_id, file=file_path)
         await callback_query.answer("🎧 در حال پخش در ویس‌چت...")
 
     elif data == "leave":
-        await call.leave_group_call(chat_id)
+        await group_call.leave_group_call(chat_id)
         await callback_query.answer("❌ از ویس‌چت خارج شد.")
 
 print("🎧 VoiceChat MusicBot Online...")
