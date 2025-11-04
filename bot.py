@@ -1166,7 +1166,166 @@ async def check_message_locks(update, context):
         except Exception as e:
             print(f"lock check error: {e}")
             return
+            
+# ============================================================
+# ⚙️ تابع مدیریت دستورات فارسی گروه
+# ============================================================
 
+async def group_command_handler(update, context):
+    if not update.message or not update.message.text:
+        return
+    text = update.message.text.strip().lower()
+
+    # قفل کامل گروه
+    if text.startswith("قفل گروه"):
+        return await handle_lockgroup(update, context)
+    elif text.startswith("باز کردن گروه") or text.startswith("بازکردن گروه"):
+        return await handle_unlockgroup(update, context)
+
+    # قفل خودکار
+    elif text.startswith("قفل خودکار گروه"):
+        return await handle_auto_lockgroup(update, context)
+    elif text.startswith("غیرفعال قفل خودکار") or text.startswith("لغو قفل خودکار"):
+        return await handle_disable_auto_lock(update, context)
+
+    # مدیریت کاربران
+    elif text.startswith("بن"):
+        return await handle_ban(update, context)
+    elif text.startswith("آزاد"):
+        return await handle_unban(update, context)
+    elif text.startswith("سکوت"):
+        return await handle_mute(update, context)
+    elif text.startswith("حذف سکوت"):
+        return await handle_unmute(update, context)
+    elif text.startswith("اخطار"):
+        return await handle_warn(update, context)
+    elif text.startswith("حذف اخطار"):
+        return await handle_unwarn(update, context)
+    elif text.startswith("اخطارها"):
+        return await handle_list_warns(update, context)
+
+    # لقب و اصل
+    elif text.startswith("ثبت لقب"):
+        return await handle_set_nick(update, context)
+    elif text.startswith("لقب من"):
+        return await handle_show_nick(update, context)
+    elif text.startswith("حذف لقب"):
+        return await handle_del_nick(update, context)
+    elif text.startswith("لیست لقب"):
+        return await handle_list_nicks(update, context)
+    elif text.startswith("ثبت اصل"):
+        return await handle_set_origin(update, context)
+    elif text.startswith("اصل من"):
+        return await handle_show_origin(update, context)
+    elif text.startswith("حذف اصل"):
+        return await handle_del_origin(update, context)
+    elif text.startswith("لیست اصل"):
+        return await handle_list_origins(update, context)
+
+    # فیلتر کلمات
+    elif text.startswith("افزودن فیلتر"):
+        return await handle_addfilter(update, context)
+    elif text.startswith("حذف فیلتر"):
+        return await handle_delfilter(update, context)
+    elif text.startswith("فیلترها"):
+        return await handle_filters(update, context)
+
+    # مدیران و سودوها
+    elif text.startswith("افزودن مدیر"):
+        return await handle_addadmin(update, context)
+    elif text.startswith("حذف مدیر"):
+        return await handle_removeadmin(update, context)
+    elif text.startswith("مدیران"):
+        return await handle_admins(update, context)
+    elif text.startswith("پاکسازی مدیران"):
+        return await handle_clearadmins(update, context)
+    elif text.startswith("افزودن سودو"):
+        return await handle_addsudo(update, context)
+    elif text.startswith("حذف سودو"):
+        return await handle_delsudo(update, context)
+    elif text.startswith("سودوها"):
+        return await handle_listsudos(update, context)
+
+    # خوش‌آمد
+    elif text.startswith("تنظیم خوشامد"):
+        return await handle_set_welcome(update, context)
+    elif text.startswith("حذف خوشامد"):
+        return await handle_del_welcome(update, context)
+
+    # پنل
+    elif text.startswith("پنل"):
+        return await handle_panel(update, context)
+        # ============================================================
+# 🚫 بررسی پیام‌ها با قفل‌ها و فیلترها
+# ============================================================
+
+async def check_message_locks(update, context):
+    msg = update.message
+    if not msg or not msg.chat or not msg.from_user:
+        return
+
+    chat_id = str(msg.chat.id)
+    user = msg.from_user
+
+    # مدیران و سودوها مستثنی‌اند
+    if await _is_admin_or_sudo_uid(context, msg.chat.id, user.id):
+        return
+
+    locks = _locks_get(msg.chat.id)
+    filters_list = filters_db.get(chat_id, [])
+
+    # --- فیلتر کلمات ---
+    if msg.text:
+        text_lower = msg.text.lower()
+        for word in filters_list:
+            if word in text_lower:
+                try:
+                    await msg.delete()
+                    await context.bot.send_message(
+                        chat_id,
+                        f"🚫 پیام {user.first_name} به‌دلیل استفاده از کلمه‌ی فیلترشده حذف شد."
+                    )
+                    return
+                except:
+                    return
+
+    # --- بررسی انواع قفل ---
+    for key, active in locks.items():
+        if not active:
+            continue
+        try:
+            if key == "links" and msg.entities:
+                for e in msg.entities:
+                    if e.type in ["url", "text_link"]:
+                        await msg.delete()
+                        return
+            elif key == "photos" and msg.photo:
+                await msg.delete(); return
+            elif key == "videos" and msg.video:
+                await msg.delete(); return
+            elif key == "files" and msg.document:
+                await msg.delete(); return
+            elif key == "stickers" and msg.sticker:
+                await msg.delete(); return
+            elif key == "gifs" and msg.animation:
+                await msg.delete(); return
+            elif key == "voices" and msg.voice:
+                await msg.delete(); return
+            elif key == "vmsgs" and msg.video_note:
+                await msg.delete(); return
+            elif key == "forward" and msg.forward_date:
+                await msg.delete(); return
+            elif key == "arabic" and msg.text and re.search(r"[\u0600-\u06FF]", msg.text):
+                await msg.delete(); return
+            elif key == "english" and msg.text and re.search(r"[a-zA-Z]", msg.text):
+                await msg.delete(); return
+            elif key == "emoji" and msg.text and re.fullmatch(r"[\U0001F600-\U0001F64F\s]+", msg.text):
+                await msg.delete(); return
+            elif key == "all":
+                await msg.delete(); return
+        except Exception as e:
+            print(f"lock check error: {e}")
+            return
 # ============================================================
 # ✅ پایان مرحله ۶
 # پنل + خوش‌آمد + دکمه‌های کنترلی کامل شد.
