@@ -1343,7 +1343,7 @@ from telegram.ext import (
 )
 
 # توکن ربات (از @BotFather بگیر)
-BOT_TOKEN = "توکن_ربات_خودت_را_اینجا_بگذار"
+BOT_TOKEN = "8465442140:AAHdWrgiTtMl_WuoAdPfEnPFoKfAyxJyNNg"
 
 # ساخت اپلیکیشن
 app = ApplicationBuilder().token(BOT_TOKEN).build()
