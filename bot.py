@@ -1348,7 +1348,6 @@ BOT_TOKEN = "8465442140:AAHdWrgiTtMl_WuoAdPfEnPFoKfAyxJyNNg"
 # ساخت اپلیکیشن
 app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-
 # ============================================================
 # 📌 ثبت همه‌ی هندلرها
 # ============================================================
@@ -1356,20 +1355,19 @@ app = ApplicationBuilder().token(BOT_TOKEN).build()
 # --- خوش‌آمد و رویدادها ---
 app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_member))
 
-# --- دستورات قفل‌ها ---
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_locks_with_alias))
+# --- دستورات اصلی فارسی (بن، سکوت، قفل گروه، اخطار، لقب و...) ---
+app.add_handler(MessageHandler(filters.TEXT, group_command_handler))
 
-# --- دستورات اصلی ---
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, group_command_handler))
+# --- قفل‌ها (فقط "قفل لینک" و "بازکردن لینک" و امثال آن) ---
+app.add_handler(MessageHandler(filters.Regex(r"^(قفل|باز ?کردن)\s+"), handle_locks_with_alias))
 
 # --- پنل و دکمه‌ها ---
 app.add_handler(MessageHandler(filters.Regex("^پنل$"), handle_panel))
 app.add_handler(CallbackQueryHandler(handle_callback))
 
-# ============================================================
-# 🧹 مانیتورینگ پیام‌ها برای قفل‌ها و فیلترها
-# ============================================================
+# --- بررسی قفل‌ها و فیلترها روی پیام‌ها ---
 app.add_handler(MessageHandler(filters.ALL, check_message_locks))
+ 
 
 # ============================================================
 # 🎯 شروع اجرای ربات
