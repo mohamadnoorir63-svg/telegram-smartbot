@@ -932,6 +932,240 @@ async def handle_callback(update, context):
             return await query.edit_message_text("ℹ️ هیچ مدیری ثبت نشده.")
         txt = "👑 <b>مدیران:</b>\n" + "\n".join([f"• <a href='tg://user?id={uid}'>مدیر</a>" for uid in lst])
         await query.edit_message_text(txt, parse_mode="HTML")
+        # ============================================================
+# ⚙️ تابع مدیریت دستورات فارسی گروه
+# ============================================================
+
+async def group_command_handler(update, context):
+    """تمام دستورات فارسی را به توابع مربوطه وصل می‌کند."""
+    if not update.message or not update.message.text:
+        return
+    text = update.message.text.strip().lower()
+
+    # قفل کامل گروه
+    if text.startswith("قفل گروه"):
+        return await handle_lockgroup(update, context)
+    elif text.startswith("باز کردن گروه") or text.startswith("بازکردن گروه"):
+        return await handle_unlockgroup(update, context)
+
+    # قفل خودکار
+    elif text.startswith("قفل خودکار گروه"):
+        return await handle_auto_lockgroup(update, context)
+    elif text.startswith("غیرفعال قفل خودکار") or text.startswith("لغو قفل خودکار"):
+        return await handle_disable_auto_lock(update, context)
+
+    # مدیریت کاربران
+    elif text.startswith("بن "):
+        return await handle_ban(update, context)
+    elif text.startswith("آزاد "):
+        return await handle_unban(update, context)
+    elif text.startswith("سکوت "):
+        return await handle_mute(update, context)
+    elif text.startswith("حذف سکوت"):
+        return await handle_unmute(update, context)
+
+    elif text.startswith("اخطار"):
+        return await handle_warn(update, context)
+    elif text.startswith("حذف اخطار"):
+        return await handle_unwarn(update, context)
+    elif text.startswith("اخطارها"):
+        return await handle_list_warns(update, context)
+
+    # لقب و اصل
+    elif text.startswith("ثبت لقب"):
+        return await handle_set_nick(update, context)
+    elif text.startswith("لقب من"):
+        return await handle_show_nick(update, context)
+    elif text.startswith("حذف لقب"):
+        return await handle_del_nick(update, context)
+    elif text.startswith("لیست لقب"):
+        return await handle_list_nicks(update, context)
+
+    elif text.startswith("ثبت اصل"):
+        return await handle_set_origin(update, context)
+    elif text.startswith("اصل من"):
+        return await handle_show_origin(update, context)
+    elif text.startswith("حذف اصل"):
+        return await handle_del_origin(update, context)
+    elif text.startswith("لیست اصل"):
+        return await handle_list_origins(update, context)
+
+    # فیلترها
+    elif text.startswith("افزودن فیلتر"):
+        return await handle_addfilter(update, context)
+    elif text.startswith("حذف فیلتر"):
+        return await handle_delfilter(update, context)
+    elif text.startswith("فیلترها"):
+        return await handle_filters(update, context)
+
+    # مدیران
+    elif text.startswith("افزودن مدیر"):
+        return await handle_addadmin(update, context)
+    elif text.startswith("حذف مدیر"):
+        return await handle_removeadmin(update, context)
+    elif text.startswith("مدیران"):
+        return await handle_admins(update, context)
+    elif text.startswith("پاکسازی مدیران"):
+        return await handle_clearadmins(update, context)
+
+    # سودو
+    elif text.startswith("افزودن سودو"):
+        return await handle_addsudo(update, context)
+    elif text.startswith("حذف سودو"):
+        return await handle_delsudo(update, context)
+    elif text.startswith("سودوها"):
+        return await handle_listsudos(update, context)
+
+    # خوشامد
+    elif text.startswith("تنظیم خوشامد"):
+        return await handle_set_welcome(update, context)
+    elif text.startswith("حذف خوشامد"):
+        return await handle_del_welcome(update, context)
+
+    # پنل
+    elif text.startswith("پنل"):
+        return await handle_panel(update, context)
+        # ============================================================
+# 🚫 بررسی پیام‌ها با قفل‌ها و فیلترها
+# ============================================================
+
+async def check_message_locks(update, context):
+    """بررسی همه پیام‌ها برای تشخیص نقض قفل‌ها و فیلترها"""
+    msg = update.message
+    if not msg or not msg.chat or not msg.from_user:
+        return
+
+    chat_id = str(msg.chat.id)
+    user = msg.from_user
+
+    # اجازه برای مدیران و سودوها
+    if await _is_admin_or_sudo_uid(context, msg.chat.id, user.id):
+        return
+
+    locks = _locks_get(msg.chat.id)
+    filters_list = filters_db.get(chat_id, [])
+
+    # --------------------------------------------
+    # 🔤 بررسی فیلتر کلمات
+    # --------------------------------------------
+    if msg.text:
+        text_lower = msg.text.lower()
+        for word in filters_list:
+            if word in text_lower:
+                try:
+                    await msg.delete()
+                    await context.bot.send_message(
+                        chat_id,
+                        f"🚫 پیام <b>{user.first_name}</b> به‌دلیل استفاده از کلمهٔ فیلترشده حذف شد.",
+                        parse_mode="HTML",
+                    )
+                    return
+                except:
+                    return
+
+    # --------------------------------------------
+    # 🧱 بررسی انواع قفل‌ها
+    # --------------------------------------------
+    for key, active in locks.items():
+        if not active:
+            continue
+
+        try:
+            # قفل لینک‌ها
+            if key == "links" and msg.entities:
+                for e in msg.entities:
+                    if e.type in ["url", "text_link"]:
+                        await msg.delete()
+                        return
+
+            # قفل عکس
+            elif key == "photos" and msg.photo:
+                await msg.delete()
+                return
+
+            # قفل ویدیو
+            elif key == "videos" and msg.video:
+                await msg.delete()
+                return
+
+            # قفل فایل‌ها
+            elif key == "files" and msg.document:
+                await msg.delete()
+                return
+
+            # قفل ویس
+            elif key == "voices" and msg.voice:
+                await msg.delete()
+                return
+
+            # قفل ویدیو مسیج
+            elif key == "vmsgs" and msg.video_note:
+                await msg.delete()
+                return
+
+            # قفل استیکر
+            elif key == "stickers" and msg.sticker:
+                await msg.delete()
+                return
+
+            # قفل گیف
+            elif key == "gifs" and msg.animation:
+                await msg.delete()
+                return
+
+            # قفل فوروارد
+            elif key == "forward" and msg.forward_date:
+                await msg.delete()
+                return
+
+            # قفل تبلیغات (تشخیص با لینک + کلمه تبلیغ)
+            elif key == "ads" and msg.text and any(x in msg.text.lower() for x in ["join", "channel", "تبچی", "تبلیغ"]):
+                await msg.delete()
+                return
+
+            # قفل یوزرنیم/تگ
+            elif key == "usernames" and msg.text and "@" in msg.text:
+                await msg.delete()
+                return
+
+            # قفل عربی
+            elif key == "arabic" and msg.text and re.search(r"[\u0600-\u06FF]", msg.text):
+                await msg.delete()
+                return
+
+            # قفل انگلیسی
+            elif key == "english" and msg.text and re.search(r"[a-zA-Z]", msg.text):
+                await msg.delete()
+                return
+
+            # قفل ایموجی (پیام‌هایی که فقط شامل ایموجی هستند)
+            elif key == "emoji" and msg.text and re.fullmatch(r"[\U0001F600-\U0001F64F\s]+", msg.text):
+                await msg.delete()
+                return
+
+            # قفل کپشن
+            elif key == "caption" and getattr(msg, "caption", None):
+                await msg.delete()
+                return
+
+            # قفل ویرایش
+            elif key == "edit" and msg.edit_date:
+                await msg.delete()
+                return
+
+            # قفل ریپلای
+            elif key == "reply" and msg.reply_to_message:
+                await msg.delete()
+                return
+
+            # قفل کلی (حذف هر نوع پیام)
+            elif key == "all":
+                await msg.delete()
+                return
+
+        except Exception as e:
+            print(f"lock check error: {e}")
+            return
 
 # ============================================================
 # ✅ پایان مرحله ۶
