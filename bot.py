@@ -333,7 +333,7 @@ register_tag_commands(client)
 from clean_module import register_clean_commands
 
 # ثبت دستورات پاکسازی
-register_clean_commands(client, SUDO_USERS)
+register_clean_commands(client)
 
 # -------------------- اجرای اصلی --------------------
 with client:
