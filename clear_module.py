@@ -45,11 +45,12 @@ def register_clear_commands(client, SUDO_USERS):
         limit = None
         target_user = None
 
-        # تعیین هدف پاکسازی
+        # تعیین هدف پاکسازی از طریق reply یا آرگومان
         reply = await event.get_reply_message()
         if reply:
             target_user = reply.sender_id
         elif arg:
+            arg = arg.strip()
             if arg.isdigit():
                 limit = int(arg)
             elif arg.startswith("@"):
@@ -75,13 +76,22 @@ def register_clear_commands(client, SUDO_USERS):
         last_id = None
 
         while True:
-            messages = await event.client.get_messages(chat_id, limit=batch_size, max_id=last_id)
+            # اگر limit تعریف شده، تعداد پیام‌ها کمتر از batch_size شود
+            fetch_limit = batch_size if not limit else min(batch_size, limit - total_deleted)
+            if fetch_limit <= 0:
+                break
+
+            kwargs = {"limit": fetch_limit}
+            if last_id:
+                kwargs["max_id"] = last_id
+
+            messages = await event.client.get_messages(chat_id, **kwargs)
             if not messages:
                 break
 
             for msg in messages:
                 try:
-                    # هدف پاکسازی
+                    # پاکسازی هدفمند
                     if target_user:
                         if msg.sender_id != target_user:
                             continue
@@ -101,7 +111,7 @@ def register_clear_commands(client, SUDO_USERS):
 
             if limit and total_deleted >= limit:
                 break
-            if len(messages) < batch_size:
+            if len(messages) < fetch_limit:
                 break
 
         # گزارش پاکسازی
