@@ -1,6 +1,7 @@
 import os, re, json, asyncio
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
+from clear_module import register_clear_commands
 
 API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
@@ -330,6 +331,7 @@ async def sudolist(event):
 from tag_module import register_tag_commands
 register_tag_commands(client)
 
+register_clear_commands(client, SUDO_USERS)
 # -------------------- اجرای اصلی --------------------
 with client:
     print("✅ Userbot فعال و آماده مدیریت گروه‌هاست...")
