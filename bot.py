@@ -91,11 +91,13 @@ async def safe_action(event, func, target_user_id, lang="fa", **kwargs):
     if not await check_protection(event, target_user_id, lang):
         return False
     try:
-        participants = await event.client.get_participants(event.chat_id)
-        if target_user_id not in [p.id for p in participants]:
-            text = "❌ این کاربر در گروه نیست، الکی اعمال نشد!" if lang=="fa" else "❌ This user is not in the group, action ignored!"
-            await send_temp_msg(event, text)
-            return False
+        # بررسی حضور کاربر در گروه
+        if event.is_group:
+            participants = await event.client.get_participants(event.chat_id)
+            if target_user_id not in [p.id for p in participants]:
+                text = "❌ این کاربر در گروه نیست، الکی اعمال نشد!" if lang=="fa" else "❌ This user is not in the group, action ignored!"
+                await send_temp_msg(event, text)
+                return False
         await func(event.chat_id, target_user_id, **kwargs)
         return True
     except Exception as e:
@@ -118,8 +120,7 @@ def detect_lang(text):
     return "en"
 
 # -------------------- دستورات مدیریت --------------------
-
-# ---------- BAN ----------
+# BAN
 @client.on(events.NewMessage(pattern=r"(?i)^(?:بن|ban)(?:\s+(.+))?$"))
 async def ban_user(event):
     lang = detect_lang(event.raw_text)
@@ -134,7 +135,7 @@ async def ban_user(event):
         info = await get_user_info_text(user)
         await send_temp_msg(event, f"🚫 کاربر {info} بن شد." if lang=="fa" else f"🚫 User {info} banned.")
 
-# ---------- UNBAN ----------
+# UNBAN
 @client.on(events.NewMessage(pattern=r"(?i)^(?:حذف بن|unban)(?:\s+(.+))?$"))
 async def unban_user(event):
     lang = detect_lang(event.raw_text)
@@ -149,7 +150,7 @@ async def unban_user(event):
         info = await get_user_info_text(user)
         await send_temp_msg(event, f"✅ کاربر {info} از بن خارج شد." if lang=="fa" else f"✅ User {info} unbanned.")
 
-# ---------- MUTE ----------
+# MUTE
 @client.on(events.NewMessage(pattern=r"(?i)^(?:سکوت|mute)(?:\s+(.+))?$"))
 async def mute_user(event):
     lang = detect_lang(event.raw_text)
@@ -164,7 +165,7 @@ async def mute_user(event):
         info = await get_user_info_text(user)
         await send_temp_msg(event, f"🔇 کاربر {info} سکوت شد." if lang=="fa" else f"🔇 User {info} muted.")
 
-# ---------- UNMUTE ----------
+# UNMUTE
 @client.on(events.NewMessage(pattern=r"(?i)^(?:حذف سکوت|unmute)(?:\s+(.+))?$"))
 async def unmute_user(event):
     lang = detect_lang(event.raw_text)
@@ -179,7 +180,7 @@ async def unmute_user(event):
         info = await get_user_info_text(user)
         await send_temp_msg(event, f"🔊 کاربر {info} از سکوت خارج شد." if lang=="fa" else f"🔊 User {info} unmuted.")
 
-# ---------- WARN ----------
+# WARN
 @client.on(events.NewMessage(pattern=r"(?i)^(?:اخطار|warn)(?:\s+(.+))?$"))
 async def warn_user(event):
     lang = detect_lang(event.raw_text)
@@ -191,6 +192,11 @@ async def warn_user(event):
         return await send_temp_msg(event, "❌ کاربر یافت نشد!" if lang=="fa" else "❌ User not found!")
     warns[user] = warns.get(user,0)+1
     info = await get_user_info_text(user)
+    if event.is_group:
+        participants = await event.client.get_participants(event.chat_id)
+        if user not in [p.id for p in participants]:
+            text = "❌ این کاربر در گروه نیست، اخطار ثبت نشد!" if lang=="fa" else "❌ This user is not in the group, warn ignored!"
+            return await send_temp_msg(event, text)
     if warns[user]>=3:
         if await safe_action(event, client.edit_permissions, user, view_messages=False, lang=lang):
             banned.add(user)
@@ -198,7 +204,7 @@ async def warn_user(event):
     else:
         await send_temp_msg(event, f"⚠️ اخطار {warns[user]} برای کاربر {info} ثبت شد." if lang=="fa" else f"⚠️ Warn {warns[user]} for user {info} registered.")
 
-# ---------- UNWARN ----------
+# UNWARN
 @client.on(events.NewMessage(pattern=r"(?i)^(?:حذف اخطار|unwarn)(?:\s+(.+))?$"))
 async def unwarn_user(event):
     lang = detect_lang(event.raw_text)
