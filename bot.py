@@ -287,6 +287,11 @@ async def clearwarn(event):
         return await send_temp_msg(event, "❌ شما اجازه دسترسی ندارید." if lang=="fa" else "❌ You don't have permission.")
     warns.clear()
     await send_temp_msg(event, "✅ لیست اخطارها پاک شد." if lang=="fa" else "✅ Warn list cleared.")
+    
+    from tag_module import register_tag_commands
+
+# ثبت دستورات تگ
+register_tag_commands(client)
 
 # -------------------- اجرای اصلی --------------------
 with client:
