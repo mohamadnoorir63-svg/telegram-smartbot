@@ -290,9 +290,8 @@ async def clearwarn(event):
     
     from tag_module import register_tag_commands
 
-# ثبت دستورات تگ
-register_tag_commands(client)
-
+    # ثبت دستورات تگ
+    register_tag_commands(client)
 # -------------------- اجرای اصلی --------------------
 with client:
     print("✅ Userbot فعال و آماده مدیریت گروه‌هاست...")
