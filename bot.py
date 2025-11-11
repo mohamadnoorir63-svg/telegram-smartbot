@@ -329,7 +329,7 @@ async def sudolist(event):
 
 # -------------------- ثبت دستورات تگ --------------------
 from tag_module import register_tag_commands
-register_tag_commands(client)
+register_tag_commands(client, SUDO_USERS)
 
 register_clear_commands(client, SUDO_USERS)
 # -------------------- اجرای اصلی --------------------
