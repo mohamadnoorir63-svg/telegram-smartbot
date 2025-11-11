@@ -330,6 +330,11 @@ async def sudolist(event):
 from tag_module import register_tag_commands
 register_tag_commands(client)
 
+from clean_module import register_clean_commands
+
+# ثبت دستورات پاکسازی
+register_clean_commands(client, SUDO_USERS)
+
 # -------------------- اجرای اصلی --------------------
 with client:
     print("✅ Userbot فعال و آماده مدیریت گروه‌هاست...")
