@@ -91,7 +91,6 @@ async def safe_action(event, func, target_user_id, lang="fa", **kwargs):
     if not await check_protection(event, target_user_id, lang):
         return False
     try:
-        # بررسی حضور کاربر در گروه
         if event.is_group:
             participants = await event.client.get_participants(event.chat_id)
             if target_user_id not in [p.id for p in participants]:
@@ -119,7 +118,7 @@ def detect_lang(text):
         return "fa"
     return "en"
 
-# -------------------- دستورات مدیریت --------------------
+# -------------------- مدیریت دستورات --------------------
 # BAN
 @client.on(events.NewMessage(pattern=r"(?i)^(?:بن|ban)(?:\s+(.+))?$"))
 async def ban_user(event):
@@ -287,11 +286,50 @@ async def clearwarn(event):
         return await send_temp_msg(event, "❌ شما اجازه دسترسی ندارید." if lang=="fa" else "❌ You don't have permission.")
     warns.clear()
     await send_temp_msg(event, "✅ لیست اخطارها پاک شد." if lang=="fa" else "✅ Warn list cleared.")
-    
-    from tag_module import register_tag_commands
 
-    # ثبت دستورات تگ
-    register_tag_commands(client)
+# -------------------- دستورات سودو --------------------
+@client.on(events.NewMessage(pattern=r"(?i)^(?:افزودن سودو|addsudo)(?:\s+(.+))?$"))
+async def addsudo(event):
+    lang = detect_lang(event.raw_text)
+    if event.sender_id not in SUDO_USERS:
+        return await send_temp_msg(event, "❌ شما اجازه دسترسی ندارید.")
+    arg = event.pattern_match.group(1)
+    user = await get_user_from_input(event, arg)
+    if not user:
+        return await send_temp_msg(event, "❌ کاربر یافت نشد!")
+    SUDO_USERS.add(user)
+    with open(SUDO_FILE, "w", encoding="utf-8") as f:
+        json.dump({"sudo_users": list(SUDO_USERS)}, f, ensure_ascii=False)
+    info = await get_user_info_text(user)
+    await send_temp_msg(event, f"✅ کاربر {info} به سودو اضافه شد.")
+
+@client.on(events.NewMessage(pattern=r"(?i)^(?:حذف سودو|remsudo)(?:\s+(.+))?$"))
+async def remsudo(event):
+    lang = detect_lang(event.raw_text)
+    if event.sender_id not in SUDO_USERS:
+        return await send_temp_msg(event, "❌ شما اجازه دسترسی ندارید.")
+    arg = event.pattern_match.group(1)
+    user = await get_user_from_input(event, arg)
+    if not user:
+        return await send_temp_msg(event, "❌ کاربر یافت نشد!")
+    SUDO_USERS.discard(user)
+    with open(SUDO_FILE, "w", encoding="utf-8") as f:
+        json.dump({"sudo_users": list(SUDO_USERS)}, f, ensure_ascii=False)
+    info = await get_user_info_text(user)
+    await send_temp_msg(event, f"✅ کاربر {info} از سودو حذف شد.")
+
+@client.on(events.NewMessage(pattern=r"(?i)^(?:لیست سودو|sudolist)$"))
+async def sudolist(event):
+    if not SUDO_USERS:
+        return await send_temp_msg(event, "✅ لیست سودو خالی است.")
+    lines = [f"{await get_user_info_text(uid)}" for uid in SUDO_USERS]
+    text = "👑 لیست سودوها:\n" + "\n".join(lines)
+    await send_temp_msg(event, text)
+
+# -------------------- ثبت دستورات تگ --------------------
+from tag_module import register_tag_commands
+register_tag_commands(client)
+
 # -------------------- اجرای اصلی --------------------
 with client:
     print("✅ Userbot فعال و آماده مدیریت گروه‌هاست...")
