@@ -3,7 +3,6 @@ import asyncio
 from telethon import events
 
 def register_clear_commands(client, SUDO_USERS):
-    
     async def is_admin_or_sudo(event):
         if event.sender_id in SUDO_USERS:
             return True
@@ -24,59 +23,66 @@ def register_clear_commands(client, SUDO_USERS):
             pass
         return msg
 
-    async def get_user_from_input(event, input_str):
-        s = input_str.strip() if input_str else ""
-        try:
-            if s.startswith("@"):
-                ent = await event.client.get_entity(s)
-                return ent.id
-            if s.isdigit() or (s.startswith("-") and s[1:].isdigit()):
-                return int(s)
-        except:
-            return None
-        reply = await event.get_reply_message()
-        if reply:
-            return reply.sender_id
-        return None
+    def detect_lang(text):
+        if any("\u0600" <= c <= "\u06FF" for c in text):
+            return "fa"
+        return "en"
 
-    # حذف پیام‌ها
-    @client.on(events.NewMessage(pattern=r"(?i)^(?:پاکسازی|clear)(?:\s+(.+))?$"))
+    @client.on(events.NewMessage(pattern=r"(?i)^(?:پاکسازی|clear)(?:\s+(\d+|@\w+))?$"))
     async def clear_messages(event):
-        lang = "fa" if any("\u0600" <= c <= "\u06FF" for c in event.raw_text) else "en"
+        lang = detect_lang(event.raw_text)
         if not await is_admin_or_sudo(event):
             return await send_temp_msg(event, "❌ شما اجازه دسترسی ندارید." if lang=="fa" else "❌ You don't have permission.")
-        
+
         arg = event.pattern_match.group(1)
-        limit = 100  # پیشفرض تعداد پیام
+        me = await event.client.get_me()
+        chat_id = event.chat_id
+        deleted_count = 0
+
+        # تعیین هدف پاکسازی
         target_user = None
+        limit = 100  # پیش فرض حداکثر ۱۰۰ پیام اگر عدد داده نشده
 
         if arg:
             if arg.isdigit():
                 limit = int(arg)
-            else:
-                target_user = await get_user_from_input(event, arg)
-        count = 0
-        async for msg in event.client.iter_messages(event.chat_id, limit=limit):
-            if target_user:
-                if msg.sender_id != target_user:
-                    continue
-            if msg.is_self or msg.out or msg.sender_id == target_user:
+            elif arg.startswith("@"):
                 try:
-                    await msg.delete()
-                    count += 1
+                    entity = await event.client.get_entity(arg)
+                    target_user = entity.id
                 except:
-                    pass
+                    return await send_temp_msg(event, "❌ کاربر یافت نشد!" if lang=="fa" else "❌ User not found!")
             else:
+                # ممکنه ID داده شده باشه
                 try:
-                    await msg.delete()
-                    count += 1
+                    target_user = int(arg)
                 except:
-                    pass
+                    return await send_temp_msg(event, "❌ ورودی نامعتبر!" if lang=="fa" else "❌ Invalid input!")
 
-        text = (f"🗑 دستور پاکسازی اجرا شد!\n"
-                f"دستور دهنده: {event.sender_id}\n"
-                f"تعداد پیام پاک شده: {count}") if lang=="fa" else (
-                f"🗑 Clear command executed!\n"
-                f"Invoker: {event.sender_id}\n"
-                f"Messages deleted: {count}")
-        await send_temp_msg(event, text, seconds=10)
+        # گرفتن پیام‌ها
+        messages = await event.client.get_messages(chat_id, limit=limit)
+
+        for msg in messages:
+            try:
+                if target_user:
+                    if msg.sender_id != target_user:
+                        continue
+                else:
+                    # پاک کردن پیام‌های ربات و خود فردی که دستور داد
+                    if msg.sender_id != me.id and msg.sender_id != event.sender_id:
+                        continue
+                await msg.delete()
+                deleted_count += 1
+            except:
+                pass
+
+        info_sender = await event.client.get_entity(event.sender_id)
+        sender_name = f"{info_sender.first_name or ''} {info_sender.last_name or ''}".strip()
+        # متن گزارش
+        report_text = f"🧹 دستور پاکسازی توسط {sender_name} اجرا شد.\n✅ تعداد پیام‌های پاک شده: {deleted_count}"
+        if target_user:
+            info_target = await event.client.get_entity(target_user)
+            target_name = f"{info_target.first_name or ''} {info_target.last_name or ''}".strip()
+            report_text += f"\n👤 پیام‌های پاک شده مربوط به: {target_name}"
+
+        await send_temp_msg(event, report_text, seconds=10)
