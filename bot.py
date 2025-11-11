@@ -38,7 +38,6 @@ async def is_admin_or_sudo(event):
         return False
 
 async def check_protection(event, target_user_id):
-    """بررسی اینکه کاربر محافظت شده نباشد"""
     me_id = (await event.client.get_me()).id
     if target_user_id in SUDO_USERS:
         await event.reply("❌ این کاربر سودو است و نمی‌توان او را مدیریت کرد.")
@@ -85,7 +84,7 @@ async def safe_action(event, func, target_user_id, **kwargs):
         await func(event.chat_id, target_user_id, **kwargs)
         return True
     except Exception as e:
-        await event.reply(f"خطا: {e}")
+        await event.reply(f"❌ خطا: {e}")
         return False
 
 # ---------- BAN ----------
@@ -96,10 +95,10 @@ async def ban_user(event):
     arg = event.pattern_match.group(1)
     user = await get_user_from_input(event, arg)
     if not user:
-        return await event.reply("کاربر یافت نشد!")
+        return await event.reply("❌ کاربر یافت نشد!")
     if await safe_action(event, client.edit_permissions, user, view_messages=False):
         banned.add(user)
-        await event.reply(f"🚫 کاربر [{user}] بن شد.")
+        await event.reply(f"✅ کاربر با آیدی `{user}` بن شد.")
 
 @client.on(events.NewMessage(pattern=r"(?i)^(?:/unban|حذف بن)(?:\s+(.+))?$"))
 async def unban_user(event):
@@ -108,10 +107,10 @@ async def unban_user(event):
     arg = event.pattern_match.group(1)
     user = await get_user_from_input(event, arg)
     if not user:
-        return await event.reply("کاربر یافت نشد!")
+        return await event.reply("❌ کاربر یافت نشد!")
     if await safe_action(event, client.edit_permissions, user, view_messages=True):
         banned.discard(user)
-        await event.reply(f"✅ کاربر [{user}] از بن خارج شد.")
+        await event.reply(f"✅ کاربر با آیدی `{user}` از بن خارج شد.")
 
 # ---------- MUTE ----------
 @client.on(events.NewMessage(pattern=r"(?i)^(?:/mute|سکوت)(?:\s+(.+))?$"))
@@ -121,10 +120,10 @@ async def mute_user(event):
     arg = event.pattern_match.group(1)
     user = await get_user_from_input(event, arg)
     if not user:
-        return await event.reply("کاربر یافت نشد!")
+        return await event.reply("❌ کاربر یافت نشد!")
     if await safe_action(event, client.edit_permissions, user, send_messages=False):
         muted.add(user)
-        await event.reply(f"🔇 کاربر [{user}] سکوت شد.")
+        await event.reply(f"✅ کاربر با آیدی `{user}` سکوت شد.")
 
 @client.on(events.NewMessage(pattern=r"(?i)^(?:/unmute|حذف سکوت)(?:\s+(.+))?$"))
 async def unmute_user(event):
@@ -133,10 +132,10 @@ async def unmute_user(event):
     arg = event.pattern_match.group(1)
     user = await get_user_from_input(event, arg)
     if not user:
-        return await event.reply("کاربر یافت نشد!")
+        return await event.reply("❌ کاربر یافت نشد!")
     if await safe_action(event, client.edit_permissions, user, send_messages=True):
         muted.discard(user)
-        await event.reply(f"🔊 کاربر [{user}] از سکوت خارج شد.")
+        await event.reply(f"✅ کاربر با آیدی `{user}` از سکوت خارج شد.")
 
 # ---------- WARN ----------
 @client.on(events.NewMessage(pattern=r"(?i)^(?:/warn|اخطار)(?:\s+(.+))?$"))
@@ -146,14 +145,14 @@ async def warn_user(event):
     arg = event.pattern_match.group(1)
     user = await get_user_from_input(event, arg)
     if not user:
-        return await event.reply("کاربر یافت نشد!")
+        return await event.reply("❌ کاربر یافت نشد!")
     warns[user] = warns.get(user,0)+1
     if warns[user]>=3:
         if await safe_action(event, client.edit_permissions, user, view_messages=False):
             banned.add(user)
-            await event.reply(f"🚫 کاربر [{user}] سه اخطار گرفت و بن شد.")
+            await event.reply(f"🚫 کاربر با آیدی `{user}` سه اخطار گرفت و بن شد.")
     else:
-        await event.reply(f"⚠️ اخطار {warns[user]} برای [{user}] ثبت شد.")
+        await event.reply(f"⚠️ اخطار {warns[user]} برای کاربر `{user}` ثبت شد.")
 
 @client.on(events.NewMessage(pattern=r"(?i)^(?:/unwarn|حذف اخطار)(?:\s+(.+))?$"))
 async def unwarn_user(event):
@@ -162,29 +161,32 @@ async def unwarn_user(event):
     arg = event.pattern_match.group(1)
     user = await get_user_from_input(event, arg)
     if not user:
-        return await event.reply("کاربر یافت نشد!")
+        return await event.reply("❌ کاربر یافت نشد!")
     warns[user]=0
-    await event.reply(f"✅ اخطارهای [{user}] پاک شدند.")
+    await event.reply(f"✅ اخطارهای کاربر `{user}` پاک شد.")
 
 # -------------------- لیست‌ها --------------------
 @client.on(events.NewMessage(pattern=r"(?i)^/banlist$"))
 async def banlist(event):
     if banned:
-        await event.reply("📛 لیست بن‌شده‌ها:\n" + "\n".join(str(u) for u in banned))
+        text = "📛 لیست بن‌شده‌ها (آیدی‌ها):\n" + "\n".join(str(u) for u in banned)
+        await event.reply(text)
     else:
         await event.reply("✅ لیست بن خالی است.")
 
 @client.on(events.NewMessage(pattern=r"(?i)^/mutelist$"))
 async def mutelist(event):
     if muted:
-        await event.reply("🔇 لیست سکوت‌شده‌ها:\n" + "\n".join(str(u) for u in muted))
+        text = "🔇 لیست سکوت‌شده‌ها (آیدی‌ها):\n" + "\n".join(str(u) for u in muted)
+        await event.reply(text)
     else:
         await event.reply("✅ لیست سکوت خالی است.")
 
 @client.on(events.NewMessage(pattern=r"(?i)^/warnlist$"))
 async def warnlist(event):
     if warns:
-        await event.reply("⚠️ لیست اخطارها:\n" + "\n".join(f"{u}: {c}" for u,c in warns.items()))
+        text = "⚠️ لیست اخطارها (آیدی‌ها):\n" + "\n".join(f"{u}: {c}" for u,c in warns.items())
+        await event.reply(text)
     else:
         await event.reply("✅ لیست اخطارها خالی است.")
 
