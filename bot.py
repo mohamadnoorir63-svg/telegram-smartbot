@@ -1,4 +1,4 @@
-import os, re, json
+import os, re, json, asyncio
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 
@@ -37,23 +37,36 @@ async def is_admin_or_sudo(event):
     except:
         return False
 
-async def check_protection(event, target_user_id):
+async def check_protection(event, target_user_id, lang="fa"):
     me_id = (await event.client.get_me()).id
     if target_user_id in SUDO_USERS:
-        await event.reply("❌ این کاربر سودو است و نمی‌توان او را مدیریت کرد.\n❌ This user is a sudo and cannot be managed.")
+        text = "❌ این کاربر سودو است و نمی‌توان او را مدیریت کرد." if lang=="fa" else "❌ This user is a sudo and cannot be managed."
+        await send_temp_msg(event, text)
         return False
     if target_user_id == me_id:
-        await event.reply("❌ شما نمی‌توانید خود ربات را مدیریت کنید!\n❌ You cannot manage me!")
+        text = "❌ شما نمی‌توانید خود ربات را مدیریت کنید!" if lang=="fa" else "❌ You cannot manage me!"
+        await send_temp_msg(event, text)
         return False
     if event.is_group:
         try:
             perm = await event.client.get_permissions(event.chat_id, target_user_id)
             if perm.is_admin:
-                await event.reply("❌ این کاربر مدیر گروه است و نمی‌توان او را مدیریت کرد.\n❌ This user is an admin and cannot be managed.")
+                text = "❌ این کاربر مدیر گروه است و نمی‌توان او را مدیریت کرد." if lang=="fa" else "❌ This user is an admin and cannot be managed."
+                await send_temp_msg(event, text)
                 return False
         except:
             pass
     return True
+
+async def send_temp_msg(event, text, seconds=10):
+    """ارسال پیام و حذف خودکار بعد از مدت زمان"""
+    msg = await event.reply(text)
+    await asyncio.sleep(seconds)
+    try:
+        await msg.delete()
+    except:
+        pass
+    return msg
 
 # -------------------- helper: گرفتن کاربر --------------------
 async def get_user_from_input(event, input_str):
@@ -61,7 +74,6 @@ async def get_user_from_input(event, input_str):
         s = input_str.strip()
     else:
         s = ""
-
     try:
         if re.match(r"^@[\w\d_]+$", s):
             ent = await event.client.get_entity(s)
@@ -70,28 +82,26 @@ async def get_user_from_input(event, input_str):
             return int(s)
     except:
         return None
-
     reply = await event.get_reply_message()
     if reply:
         return reply.sender_id
     return None
 
-# -------------------- اجرای ایمن --------------------
-async def safe_action(event, func, target_user_id, **kwargs):
-    if not await check_protection(event, target_user_id):
+async def safe_action(event, func, target_user_id, lang="fa", **kwargs):
+    if not await check_protection(event, target_user_id, lang):
         return False
     try:
         participants = await event.client.get_participants(event.chat_id)
         if target_user_id not in [p.id for p in participants]:
-            await event.reply("❌ این کاربر در گروه نیست، الکی اعمال نشد!\n❌ This user is not in the group, action ignored!")
+            text = "❌ این کاربر در گروه نیست، الکی اعمال نشد!" if lang=="fa" else "❌ This user is not in the group, action ignored!"
+            await send_temp_msg(event, text)
             return False
         await func(event.chat_id, target_user_id, **kwargs)
         return True
     except Exception as e:
-        await event.reply(f"❌ خطا: {e}\n❌ Error: {e}")
+        await send_temp_msg(event, f"❌ خطا: {e}" if lang=="fa" else f"❌ Error: {e}")
         return False
 
-# -------------------- مدیریت دستورات --------------------
 async def get_user_info_text(user_id):
     try:
         user = await client.get_entity(user_id)
@@ -101,143 +111,176 @@ async def get_user_info_text(user_id):
     except:
         return str(user_id)
 
-# BAN
+def detect_lang(text):
+    """تشخیص فارسی یا انگلیسی"""
+    if any("\u0600" <= c <= "\u06FF" for c in text):
+        return "fa"
+    return "en"
+
+# -------------------- دستورات مدیریت --------------------
+
+# ---------- BAN ----------
 @client.on(events.NewMessage(pattern=r"(?i)^(?:بن|ban)(?:\s+(.+))?$"))
 async def ban_user(event):
+    lang = detect_lang(event.raw_text)
     if not await is_admin_or_sudo(event):
-        return await event.reply("❌ شما اجازه دسترسی ندارید.\n❌ You don't have permission.")
+        return await send_temp_msg(event, "❌ شما اجازه دسترسی ندارید." if lang=="fa" else "❌ You don't have permission.")
     arg = event.pattern_match.group(1)
     user = await get_user_from_input(event, arg)
     if not user:
-        return await event.reply("❌ کاربر یافت نشد!\n❌ User not found!")
-    if await safe_action(event, client.edit_permissions, user, view_messages=False):
+        return await send_temp_msg(event, "❌ کاربر یافت نشد!" if lang=="fa" else "❌ User not found!")
+    if await safe_action(event, client.edit_permissions, user, view_messages=False, lang=lang):
         banned.add(user)
         info = await get_user_info_text(user)
-        await event.reply(f"🚫 کاربر {info} بن شد.\n🚫 User {info} banned.")
+        await send_temp_msg(event, f"🚫 کاربر {info} بن شد." if lang=="fa" else f"🚫 User {info} banned.")
 
+# ---------- UNBAN ----------
 @client.on(events.NewMessage(pattern=r"(?i)^(?:حذف بن|unban)(?:\s+(.+))?$"))
 async def unban_user(event):
+    lang = detect_lang(event.raw_text)
     if not await is_admin_or_sudo(event):
-        return await event.reply("❌ شما اجازه دسترسی ندارید.\n❌ You don't have permission.")
+        return await send_temp_msg(event, "❌ شما اجازه دسترسی ندارید." if lang=="fa" else "❌ You don't have permission.")
     arg = event.pattern_match.group(1)
     user = await get_user_from_input(event, arg)
     if not user:
-        return await event.reply("❌ کاربر یافت نشد!\n❌ User not found!")
-    if await safe_action(event, client.edit_permissions, user, view_messages=True):
+        return await send_temp_msg(event, "❌ کاربر یافت نشد!" if lang=="fa" else "❌ User not found!")
+    if await safe_action(event, client.edit_permissions, user, view_messages=True, lang=lang):
         banned.discard(user)
         info = await get_user_info_text(user)
-        await event.reply(f"✅ کاربر {info} از بن خارج شد.\n✅ User {info} unbanned.")
+        await send_temp_msg(event, f"✅ کاربر {info} از بن خارج شد." if lang=="fa" else f"✅ User {info} unbanned.")
 
-# MUTE
+# ---------- MUTE ----------
 @client.on(events.NewMessage(pattern=r"(?i)^(?:سکوت|mute)(?:\s+(.+))?$"))
 async def mute_user(event):
+    lang = detect_lang(event.raw_text)
     if not await is_admin_or_sudo(event):
-        return await event.reply("❌ شما اجازه دسترسی ندارید.\n❌ You don't have permission.")
+        return await send_temp_msg(event, "❌ شما اجازه دسترسی ندارید." if lang=="fa" else "❌ You don't have permission.")
     arg = event.pattern_match.group(1)
     user = await get_user_from_input(event, arg)
     if not user:
-        return await event.reply("❌ کاربر یافت نشد!\n❌ User not found!")
-    if await safe_action(event, client.edit_permissions, user, send_messages=False):
+        return await send_temp_msg(event, "❌ کاربر یافت نشد!" if lang=="fa" else "❌ User not found!")
+    if await safe_action(event, client.edit_permissions, user, send_messages=False, lang=lang):
         muted.add(user)
         info = await get_user_info_text(user)
-        await event.reply(f"🔇 کاربر {info} سکوت شد.\n🔇 User {info} muted.")
+        await send_temp_msg(event, f"🔇 کاربر {info} سکوت شد." if lang=="fa" else f"🔇 User {info} muted.")
 
+# ---------- UNMUTE ----------
 @client.on(events.NewMessage(pattern=r"(?i)^(?:حذف سکوت|unmute)(?:\s+(.+))?$"))
 async def unmute_user(event):
+    lang = detect_lang(event.raw_text)
     if not await is_admin_or_sudo(event):
-        return await event.reply("❌ شما اجازه دسترسی ندارید.\n❌ You don't have permission.")
+        return await send_temp_msg(event, "❌ شما اجازه دسترسی ندارید." if lang=="fa" else "❌ You don't have permission.")
     arg = event.pattern_match.group(1)
     user = await get_user_from_input(event, arg)
     if not user:
-        return await event.reply("❌ کاربر یافت نشد!\n❌ User not found!")
-    if await safe_action(event, client.edit_permissions, user, send_messages=True):
+        return await send_temp_msg(event, "❌ کاربر یافت نشد!" if lang=="fa" else "❌ User not found!")
+    if await safe_action(event, client.edit_permissions, user, send_messages=True, lang=lang):
         muted.discard(user)
         info = await get_user_info_text(user)
-        await event.reply(f"✅ کاربر {info} از سکوت خارج شد.\n✅ User {info} unmuted.")
+        await send_temp_msg(event, f"🔊 کاربر {info} از سکوت خارج شد." if lang=="fa" else f"🔊 User {info} unmuted.")
 
-# WARN
+# ---------- WARN ----------
 @client.on(events.NewMessage(pattern=r"(?i)^(?:اخطار|warn)(?:\s+(.+))?$"))
 async def warn_user(event):
+    lang = detect_lang(event.raw_text)
     if not await is_admin_or_sudo(event):
-        return await event.reply("❌ شما اجازه دسترسی ندارید.\n❌ You don't have permission.")
+        return await send_temp_msg(event, "❌ شما اجازه دسترسی ندارید." if lang=="fa" else "❌ You don't have permission.")
     arg = event.pattern_match.group(1)
     user = await get_user_from_input(event, arg)
     if not user:
-        return await event.reply("❌ کاربر یافت نشد!\n❌ User not found!")
+        return await send_temp_msg(event, "❌ کاربر یافت نشد!" if lang=="fa" else "❌ User not found!")
     warns[user] = warns.get(user,0)+1
     info = await get_user_info_text(user)
     if warns[user]>=3:
-        if await safe_action(event, client.edit_permissions, user, view_messages=False):
+        if await safe_action(event, client.edit_permissions, user, view_messages=False, lang=lang):
             banned.add(user)
-            await event.reply(f"🚫 کاربر {info} سه اخطار گرفت و بن شد.\n🚫 User {info} got 3 warns and was banned.")
+            await send_temp_msg(event, f"🚫 کاربر {info} سه اخطار گرفت و بن شد." if lang=="fa" else f"🚫 User {info} got 3 warns and banned.")
     else:
-        await event.reply(f"⚠️ اخطار {warns[user]} برای کاربر {info} ثبت شد.\n⚠️ Warn {warns[user]} for user {info} registered.")
+        await send_temp_msg(event, f"⚠️ اخطار {warns[user]} برای کاربر {info} ثبت شد." if lang=="fa" else f"⚠️ Warn {warns[user]} for user {info} registered.")
 
+# ---------- UNWARN ----------
 @client.on(events.NewMessage(pattern=r"(?i)^(?:حذف اخطار|unwarn)(?:\s+(.+))?$"))
 async def unwarn_user(event):
+    lang = detect_lang(event.raw_text)
     if not await is_admin_or_sudo(event):
-        return await event.reply("❌ شما اجازه دسترسی ندارید.\n❌ You don't have permission.")
+        return await send_temp_msg(event, "❌ شما اجازه دسترسی ندارید." if lang=="fa" else "❌ You don't have permission.")
     arg = event.pattern_match.group(1)
     user = await get_user_from_input(event, arg)
     if not user:
-        return await event.reply("❌ کاربر یافت نشد!\n❌ User not found!")
-    warns[user]=0
+        return await send_temp_msg(event, "❌ کاربر یافت نشد!" if lang=="fa" else "❌ User not found!")
+    warns[user] = 0
     info = await get_user_info_text(user)
-    await event.reply(f"✅ اخطارهای کاربر {info} پاک شد.\n✅ User {info} warns cleared.")
+    await send_temp_msg(event, f"✅ اخطارهای کاربر {info} پاک شد." if lang=="fa" else f"✅ User {info} warns cleared.")
 
 # -------------------- لیست‌ها --------------------
-async def show_list(event, user_set, title_fa, title_en, is_warn=False):
-    if not user_set:
-        await event.reply(f"✅ {title_fa} خالی است.\n✅ {title_en} is empty.")
-        return
-    text = f"{title_fa} (نام + یوزرنیم + آیدی):\n"
-    for u in user_set if not is_warn else user_set.keys():
-        try:
-            user = await event.client.get_entity(u)
-            name = f"{user.first_name or ''} {user.last_name or ''}".strip()
-            username = f"@{user.username}" if user.username else "NoUsername"
-            if is_warn:
-                count = user_set[u]
-                text += f"- {name} ({username}, {u}): {count}\n"
-            else:
-                text += f"- {name} ({username}, {u})\n"
-        except:
-            text += f"- {u}\n"
-    await event.reply(text)
-
 @client.on(events.NewMessage(pattern=r"(?i)^(?:لیست بن|banlist)$"))
 async def banlist(event):
-    await show_list(event, banned, "لیست بن", "Ban list")
+    lang = detect_lang(event.raw_text)
+    if banned:
+        lines = []
+        participants = await event.client.get_participants(event.chat_id)
+        members = {p.id: p for p in participants}
+        for uid in banned:
+            if uid in members:
+                lines.append(f"{await get_user_info_text(uid)}")
+            else:
+                lines.append(f"{uid} (خارج از گروه)")
+        text = "📛 لیست بن‌شده‌ها:\n" + "\n".join(lines) if lang=="fa" else "📛 Banned list:\n" + "\n".join(lines)
+    else:
+        text = "✅ لیست بن خالی است." if lang=="fa" else "✅ Banned list is empty."
+    await send_temp_msg(event, text)
 
 @client.on(events.NewMessage(pattern=r"(?i)^(?:لیست سکوت|mutelist)$"))
 async def mutelist(event):
-    await show_list(event, muted, "لیست سکوت", "Mute list")
+    lang = detect_lang(event.raw_text)
+    if muted:
+        lines = []
+        participants = await event.client.get_participants(event.chat_id)
+        members = {p.id: p for p in participants}
+        for uid in muted:
+            if uid in members:
+                lines.append(f"{await get_user_info_text(uid)}")
+            else:
+                lines.append(f"{uid} (خارج از گروه)")
+        text = "🔇 لیست سکوت‌شده‌ها:\n" + "\n".join(lines) if lang=="fa" else "🔇 Muted list:\n" + "\n".join(lines)
+    else:
+        text = "✅ لیست سکوت خالی است." if lang=="fa" else "✅ Muted list is empty."
+    await send_temp_msg(event, text)
 
 @client.on(events.NewMessage(pattern=r"(?i)^(?:لیست اخطار|warnlist)$"))
 async def warnlist(event):
-    await show_list(event, warns, "لیست اخطارها", "Warn list", is_warn=True)
+    lang = detect_lang(event.raw_text)
+    if warns:
+        lines = [f"{await get_user_info_text(uid)}: {count}" for uid,count in warns.items()]
+        text = "⚠️ لیست اخطارها:\n" + "\n".join(lines) if lang=="fa" else "⚠️ Warn list:\n" + "\n".join(lines)
+    else:
+        text = "✅ لیست اخطارها خالی است." if lang=="fa" else "✅ Warn list is empty."
+    await send_temp_msg(event, text)
 
 # -------------------- پاکسازی لیست‌ها --------------------
 @client.on(events.NewMessage(pattern=r"(?i)^(?:پاکسازی بن|clearban)$"))
 async def clearban(event):
+    lang = detect_lang(event.raw_text)
     if not await is_admin_or_sudo(event):
-        return await event.reply("❌ شما اجازه دسترسی ندارید.\n❌ You don't have permission.")
+        return await send_temp_msg(event, "❌ شما اجازه دسترسی ندارید." if lang=="fa" else "❌ You don't have permission.")
     banned.clear()
-    await event.reply("✅ لیست بن پاک شد.\n✅ Ban list cleared.")
+    await send_temp_msg(event, "✅ لیست بن پاک شد." if lang=="fa" else "✅ Banned list cleared.")
 
 @client.on(events.NewMessage(pattern=r"(?i)^(?:پاکسازی سکوت|clearmute)$"))
 async def clearmute(event):
+    lang = detect_lang(event.raw_text)
     if not await is_admin_or_sudo(event):
-        return await event.reply("❌ شما اجازه دسترسی ندارید.\n❌ You don't have permission.")
+        return await send_temp_msg(event, "❌ شما اجازه دسترسی ندارید." if lang=="fa" else "❌ You don't have permission.")
     muted.clear()
-    await event.reply("✅ لیست سکوت پاک شد.\n✅ Mute list cleared.")
+    await send_temp_msg(event, "✅ لیست سکوت پاک شد." if lang=="fa" else "✅ Muted list cleared.")
 
 @client.on(events.NewMessage(pattern=r"(?i)^(?:پاکسازی اخطار|clearwarn)$"))
 async def clearwarn(event):
+    lang = detect_lang(event.raw_text)
     if not await is_admin_or_sudo(event):
-        return await event.reply("❌ شما اجازه دسترسی ندارید.\n❌ You don't have permission.")
+        return await send_temp_msg(event, "❌ شما اجازه دسترسی ندارید." if lang=="fa" else "❌ You don't have permission.")
     warns.clear()
-    await event.reply("✅ لیست اخطارها پاک شد.\n✅ Warn list cleared.")
+    await send_temp_msg(event, "✅ لیست اخطارها پاک شد." if lang=="fa" else "✅ Warn list cleared.")
 
 # -------------------- اجرای اصلی --------------------
 with client:
