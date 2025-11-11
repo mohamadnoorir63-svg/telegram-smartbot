@@ -1,10 +1,8 @@
 # clear_module.py
 import asyncio
 from telethon import events
-from datetime import datetime
 
 def register_clear_commands(client, SUDO_USERS):
-
     async def is_admin_or_sudo(event):
         if event.sender_id in SUDO_USERS:
             return True
@@ -30,28 +28,26 @@ def register_clear_commands(client, SUDO_USERS):
             return "fa"
         return "en"
 
-    async def batch_delete(client, messages):
-        tasks = []
-        for msg in messages:
-            tasks.append(msg.delete())
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        return sum(1 for r in results if r is None)
-
     @client.on(events.NewMessage(pattern=r"(?i)^(?:پاکسازی|clear)(?:\s+(.+))?$"))
     async def clear_messages(event):
         lang = detect_lang(event.raw_text)
         if not await is_admin_or_sudo(event):
-            return await send_temp_msg(event, "❌ شما اجازه دسترسی ندارید." if lang=="fa" else "❌ You don't have permission.")
+            return await send_temp_msg(
+                event,
+                "❌ شما اجازه دسترسی ندارید." if lang=="fa" else "❌ You don't have permission."
+            )
 
         arg = event.pattern_match.group(1)
         me = await event.client.get_me()
         chat_id = event.chat_id
         deleted_count = 0
-        target_user = None
-        limit = None  # None = پاکسازی کل گروه
 
-        # تعیین هدف پاکسازی
+        # تعیین هدف پاکسازی و محدودیت
+        target_user = None
+        limit = None  # None → همه پیام‌ها
+
         if arg:
+            arg = arg.strip()
             if arg.isdigit():
                 limit = int(arg)
             elif arg.startswith("@"):
@@ -59,60 +55,53 @@ def register_clear_commands(client, SUDO_USERS):
                     entity = await event.client.get_entity(arg)
                     target_user = entity.id
                 except:
-                    return await send_temp_msg(event, "❌ کاربر یا ربات یافت نشد!" if lang=="fa" else "❌ User/robot not found!")
+                    return await send_temp_msg(
+                        event, "❌ کاربر یافت نشد!" if lang=="fa" else "❌ User not found!"
+                    )
             else:
                 try:
                     target_user = int(arg)
                 except:
-                    return await send_temp_msg(event, "❌ ورودی نامعتبر!" if lang=="fa" else "❌ Invalid input!")
+                    return await send_temp_msg(
+                        event, "❌ ورودی نامعتبر!" if lang=="fa" else "❌ Invalid input!"
+                    )
+        else:
+            limit = None  # پاکسازی کل پیام‌ها
 
-        # اگر روی پیام ریپلای شده زده شود
-        reply = await event.get_reply_message()
-        if reply:
-            target_user = reply.sender_id
-
-        batch_size = 500  # تعداد پیام در هر batch
+        # دریافت تمام پیام‌ها در گروه
+        batch_size = 200
+        total_fetched = 0
         while True:
-            fetch_limit = batch_size if not limit else min(batch_size, limit - deleted_count)
-            messages = await event.client.get_messages(chat_id, limit=fetch_limit)
+            messages = await event.client.get_messages(chat_id, limit=batch_size, offset_id=0)
             if not messages:
                 break
 
-            to_delete = []
             for msg in messages:
                 try:
-                    # حذف پیام‌ها بر اساس هدف
                     if target_user:
                         if msg.sender_id != target_user:
                             continue
                     else:
-                        # پاکسازی پیام‌های خود ربات، دستور دهنده، و سایر ربات‌ها
-                        if not (msg.sender_id == me.id or msg.sender_id == event.sender_id):
-                            # برای ربات‌ها، sender.bot = True
-                            if not getattr(msg.sender, 'bot', False):
-                                continue
-                    to_delete.append(msg)
+                        # همه پیام‌ها
+                        pass
+                    await msg.delete()
+                    deleted_count += 1
+                    total_fetched += 1
+                    if limit and total_fetched >= limit:
+                        break
                 except:
                     continue
 
-            if not to_delete:
+            if limit and total_fetched >= limit:
+                break
+            if len(messages) < batch_size:
                 break
 
-            deleted = await batch_delete(event.client, to_delete)
-            deleted_count += deleted
-
-            # محدودیت تعداد
-            if limit and deleted_count >= limit:
-                break
-            # اگر کمتر از batch_size پیام پیدا شد، پایان
-            if len(to_delete) < fetch_limit:
-                break
-
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # اطلاعات دستور دهنده
         info_sender = await event.client.get_entity(event.sender_id)
         sender_name = f"{info_sender.first_name or ''} {info_sender.last_name or ''}".strip()
 
-        report_text = f"🧹 دستور پاکسازی توسط {sender_name} اجرا شد.\n🕒 زمان: {now}\n✅ تعداد پیام‌های پاک شده: {deleted_count}"
+        report_text = f"🧹 دستور پاکسازی توسط {sender_name} اجرا شد.\n🕒 زمان: {event.date}\n✅ تعداد پیام‌های پاک شده: {deleted_count}"
         if target_user:
             info_target = await event.client.get_entity(target_user)
             target_name = f"{info_target.first_name or ''} {info_target.last_name or ''}".strip()
