@@ -42,9 +42,8 @@ def register_clear_commands(client, SUDO_USERS):
         chat_id = event.chat_id
         deleted_count = 0
 
-        # تعیین هدف پاکسازی و محدودیت
         target_user = None
-        limit = None  # None → همه پیام‌ها
+        limit = None
 
         if arg:
             arg = arg.strip()
@@ -55,24 +54,19 @@ def register_clear_commands(client, SUDO_USERS):
                     entity = await event.client.get_entity(arg)
                     target_user = entity.id
                 except:
-                    return await send_temp_msg(
-                        event, "❌ کاربر یافت نشد!" if lang=="fa" else "❌ User not found!"
-                    )
+                    return await send_temp_msg(event, "❌ کاربر یافت نشد!" if lang=="fa" else "❌ User not found!")
             else:
                 try:
                     target_user = int(arg)
                 except:
-                    return await send_temp_msg(
-                        event, "❌ ورودی نامعتبر!" if lang=="fa" else "❌ Invalid input!"
-                    )
-        else:
-            limit = None  # پاکسازی کل پیام‌ها
+                    return await send_temp_msg(event, "❌ ورودی نامعتبر!" if lang=="fa" else "❌ Invalid input!")
 
-        # دریافت تمام پیام‌ها در گروه
         batch_size = 200
         total_fetched = 0
+        last_id = 0  # برای پیمایش از جدیدترین به قدیمی‌ترین
+
         while True:
-            messages = await event.client.get_messages(chat_id, limit=batch_size, offset_id=0)
+            messages = await event.client.get_messages(chat_id, limit=batch_size, max_id=last_id or None)
             if not messages:
                 break
 
@@ -81,12 +75,11 @@ def register_clear_commands(client, SUDO_USERS):
                     if target_user:
                         if msg.sender_id != target_user:
                             continue
-                    else:
-                        # همه پیام‌ها
-                        pass
+                    # حذف همه پیام‌ها
                     await msg.delete()
                     deleted_count += 1
                     total_fetched += 1
+                    last_id = msg.id
                     if limit and total_fetched >= limit:
                         break
                 except:
@@ -97,7 +90,6 @@ def register_clear_commands(client, SUDO_USERS):
             if len(messages) < batch_size:
                 break
 
-        # اطلاعات دستور دهنده
         info_sender = await event.client.get_entity(event.sender_id)
         sender_name = f"{info_sender.first_name or ''} {info_sender.last_name or ''}".strip()
 
