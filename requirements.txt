@@ -2,3 +2,7 @@ pyrogram==2.0.39
 tgcrypto
 yt-dlp
 pydub
+aiofiles
+python-dotenv
+requests
+beautifulsoup4
