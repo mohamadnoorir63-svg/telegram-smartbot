@@ -1,12 +1,4 @@
 pyrogram==2.0.39
 tgcrypto
-
-# pytgcalls از GitHub (نسخه master همیشه آخرین نسخه سازگار)
-git+https://github.com/pytgcalls/pytgcalls.git
-
 yt-dlp
 pydub
-aiofiles
-python-dotenv
-requests
-beautifulsoup4
