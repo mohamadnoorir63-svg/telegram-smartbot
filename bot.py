@@ -1,34 +1,49 @@
+import os
 from pyrogram import Client, filters
-from gorghan import search_music
-from player import join_and_play
-import requests
+from yt_dlp import YoutubeDL
+from pydub import AudioSegment
 
-app = Client("music_bot")
+# اطلاعات ربات
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-@app.on_message(filters.command("start"))
-async def start(_, message):
-    await message.reply_text("سلام! ربات موزیک پلیر آماده است 🎵")
+# پوشه موقت برای فایل‌ها
+DOWNLOAD_PATH = "downloads"
+os.makedirs(DOWNLOAD_PATH, exist_ok=True)
 
-@app.on_message(filters.command("play"))
-async def play(_, message):
-    query = " ".join(message.command[1:])
-    results = search_music(query)
-    if not results:
-        await message.reply_text("موزیک پیدا نشد ❌")
+app = Client("music_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+
+@app.on_message(filters.command("music") & filters.private)
+async def music_handler(client, message):
+    if len(message.command) < 2:
+        await message.reply_text("نام آهنگ را بعد از /music وارد کنید")
         return
-    
-    # دانلود اولین نتیجه
-    r = requests.get(results[0]["link"])
-    file_path = f"temp.mp3"
-    with open(file_path, "wb") as f:
-        f.write(r.content)
-    
-    join_and_play(message.chat.id, file_path)
-    await message.reply_text(f"در حال پخش: {results[0]['title']} 🎶")
 
-@app.on_message(filters.command("stop"))
-async def stop(_, message):
-    vc.leave_group_call(message.chat.id)
-    await message.reply_text("پخش متوقف شد ⏹️")
+    query = " ".join(message.command[1:])
+    await message.reply_text(f"در حال جستجوی '{query}' ...")
+
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "noplaylist": True,
+        "default_search": "ytsearch",
+        "outtmpl": f"{DOWNLOAD_PATH}/%(title)s.%(ext)s",
+        "quiet": True,
+        "postprocessors": [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "192",
+        }],
+    }
+
+    try:
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(query, download=True)
+            file_path = ydl.prepare_filename(info).replace(".webm", ".mp3").replace(".m4a", ".mp3")
+
+        await message.reply_audio(audio=file_path, title=info.get("title", "Music"))
+        os.remove(file_path)  # حذف فایل بعد از ارسال
+    except Exception as e:
+        await message.reply_text(f"خطا در دانلود: {e}")
 
 app.run()
