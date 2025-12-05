@@ -2,45 +2,42 @@ import os
 from pyrogram import Client, filters
 from yt_dlp import YoutubeDL
 
-# =====================
-# اطلاعات ربات
-# =====================
-API_ID = int(os.environ.get("API_ID"))      # اگه لازم باشه
-API_HASH = os.environ.get("API_HASH")       # اگه لازم باشه
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
+# ========================
+# تنظیمات ربات
+# ========================
+API_ID = int(os.environ.get("API_ID"))
+API_HASH = os.environ.get("API_HASH"))
+SESSION_STRING = os.environ.get("SESSION_STRING")
 
-# مسیر ذخیره موقت فایل‌ها
+# پوشه موقت برای فایل‌های دانلود
 DOWNLOAD_PATH = "downloads"
 os.makedirs(DOWNLOAD_PATH, exist_ok=True)
 
-# =====================
-# ایجاد ربات
-# =====================
+# ساخت Client با StringSession
 app = Client(
-    "music_bot",
-    bot_token=BOT_TOKEN,
+    session_name=SESSION_STRING,
     api_id=API_ID,
     api_hash=API_HASH,
 )
 
-# =====================
-# دستور Ping
-# =====================
-@app.on_message(filters.command("ping") & filters.private)
+# ========================
+# دستور Ping برای چک آنلاین بودن
+# ========================
+@app.on_message(filters.command("Ping") & filters.private)
 async def ping_handler(client, message):
     await message.reply_text("✅ ربات آنلاین است!")
 
-# =====================
+# ========================
 # دستور دانلود موزیک
-# =====================
+# ========================
 @app.on_message(filters.command("music") & filters.private)
 async def music_handler(client, message):
     if len(message.command) < 2:
-        await message.reply_text("لطفاً نام آهنگ را بعد از /music وارد کنید")
+        await message.reply_text("نام آهنگ را بعد از دستور وارد کنید")
         return
 
     query = " ".join(message.command[1:])
-    await message.reply_text(f"در حال جستجوی آهنگ '{query}' ... 🎵")
+    await message.reply_text(f"🔎 در حال جستجوی '{query}' ...")
 
     ydl_opts = {
         "format": "bestaudio/best",
@@ -61,11 +58,11 @@ async def music_handler(client, message):
             file_path = ydl.prepare_filename(info).replace(".webm", ".mp3").replace(".m4a", ".mp3")
 
         await message.reply_audio(audio=file_path, title=info.get("title", "Music"))
-        os.remove(file_path)  # حذف فایل بعد از ارسال
+        os.remove(file_path)
     except Exception as e:
         await message.reply_text(f"❌ خطا در دانلود: {e}")
 
-# =====================
+# ========================
 # اجرای ربات
-# =====================
+# ========================
 app.run()
