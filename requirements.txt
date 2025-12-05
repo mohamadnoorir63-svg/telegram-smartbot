@@ -1,6 +1,6 @@
 pyrogram==2.0.39
 tgcrypto
-git+https://github.com/pytgcalls/pytgcalls.git@master
+py-tgcalls==3.0.0.dev24
 yt-dlp
 aiofiles
 python-dotenv
