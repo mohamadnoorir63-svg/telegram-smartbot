@@ -1,7 +1,0 @@
-pyrogram==2.0.39
-tgcrypto
-py-tgcalls==3.0.0.dev24
-yt-dlp
-aiofiles
-python-dotenv
-pydub
