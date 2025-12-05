@@ -1,9 +1,20 @@
+# Telegram client
 pyrogram==2.0.39
 tgcrypto
-pytgcalls==2.1.0   # نسخه پایدار و قابل نصب
+
+# Voice calls for Telegram (نسخه سازگار با pyrogram 2.x)
+git+https://github.com/pytgcalls/pytgcalls@master
+
+# دانلود و مدیریت ویدئو/صوت
 yt-dlp
-aiofiles
-python-dotenv
 pydub
+
+# Async file handling
+aiofiles
+
+# مدیریت محیط و متغیرها
+python-dotenv
+
+# درخواست‌های HTTP
 requests
 beautifulsoup4
