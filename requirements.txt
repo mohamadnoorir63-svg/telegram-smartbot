@@ -4,3 +4,6 @@ yt-dlp
 aiofiles
 python-dotenv
 pydub
+requests
+beautifulsoup4
+git+https://github.com/pytgcalls/pytgcalls.git@master
