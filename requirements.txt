@@ -1,6 +1,6 @@
 pyrogram==2.0.39
 tgcrypto
-pytgcalls==2.1.0  # نسخه پایدار و قابل نصب
+pytgcalls==2.1.0   # نسخه پایدار و قابل نصب
 yt-dlp
 aiofiles
 python-dotenv
