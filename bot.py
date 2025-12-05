@@ -1,13 +1,13 @@
-from pyrogram import Client
+from pyrogram import Client, filters
 import os
 
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-STRING_SESSION = os.getenv("STRING_SESSION")  # session string از تلگرام بگیر
+STRING_SESSION = os.getenv("STRING_SESSION")  # رشته session از تلگرام
 
 app = Client(
-    session_name=STRING_SESSION,
+    session=STRING_SESSION,  # <-- اینجا به جای session_name
     api_id=API_ID,
     api_hash=API_HASH,
     bot_token=BOT_TOKEN
