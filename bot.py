@@ -1,33 +1,34 @@
-import os
 from pyrogram import Client, filters
-from player import Player
-from dotenv import load_dotenv
+from gorghan import search_music
+from player import join_and_play
+import requests
 
-load_dotenv()
-
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH")
-
-app = Client("musicbot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
-
-player = Player(app)
+app = Client("music_bot")
 
 @app.on_message(filters.command("start"))
-async def start(client, message):
+async def start(_, message):
     await message.reply_text("سلام! ربات موزیک پلیر آماده است 🎵")
 
 @app.on_message(filters.command("play"))
-async def play(client, message):
-    if len(message.command) < 2:
-        await message.reply_text("لطفاً نام یا لینک موزیک را ارسال کنید!")
+async def play(_, message):
+    query = " ".join(message.command[1:])
+    results = search_music(query)
+    if not results:
+        await message.reply_text("موزیک پیدا نشد ❌")
         return
-    query = message.text.split(None, 1)[1]
-    await player.play(message.chat.id, query)
+    
+    # دانلود اولین نتیجه
+    r = requests.get(results[0]["link"])
+    file_path = f"temp.mp3"
+    with open(file_path, "wb") as f:
+        f.write(r.content)
+    
+    join_and_play(message.chat.id, file_path)
+    await message.reply_text(f"در حال پخش: {results[0]['title']} 🎶")
 
 @app.on_message(filters.command("stop"))
-async def stop(client, message):
-    await player.stop(message.chat.id)
+async def stop(_, message):
+    vc.leave_group_call(message.chat.id)
     await message.reply_text("پخش متوقف شد ⏹️")
 
 app.run()
