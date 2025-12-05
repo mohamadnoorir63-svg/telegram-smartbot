@@ -1,19 +1,19 @@
-from pyrogram import Client, filters
 import os
+from pyrogram import Client, filters
 
-API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH")
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-STRING_SESSION = os.getenv("STRING_SESSION")  # رشته session از تلگرام
+API_ID = int(os.environ.get("API_ID"))
+API_HASH = os.environ.get("API_HASH")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+SUDO_IDS = [8588347189]
 
 app = Client(
-    session=STRING_SESSION,  # <-- اینجا به جای session_name
+    "music_bot",  # اسم محلی session (فقط برای Pyrogram)
     api_id=API_ID,
     api_hash=API_HASH,
     bot_token=BOT_TOKEN
 )
 
-@app.on_message(filters.command("ping") & filters.private)
+@app.on_message(filters.command("ping") & filters.user(SUDO_IDS))
 async def ping(client, message):
     await message.reply_text("من آنلاینم ✅")
 
