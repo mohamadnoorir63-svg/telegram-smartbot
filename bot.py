@@ -2,12 +2,10 @@ import os
 from pyrogram import Client, filters
 from yt_dlp import YoutubeDL
 
-# اطلاعات ربات
 API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH"))
+API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# مسیر موقت برای دانلود (Heroku محدودیت دارد)
 DOWNLOAD_PATH = "/tmp"
 os.makedirs(DOWNLOAD_PATH, exist_ok=True)
 
@@ -47,7 +45,7 @@ async def music_handler(client, message):
             file_path = ydl.prepare_filename(info).replace(".webm", ".mp3").replace(".m4a", ".mp3")
 
         await message.reply_audio(audio=file_path, title=info.get("title", "Music"))
-        os.remove(file_path)  # پاک کردن فایل بعد از ارسال
+        os.remove(file_path)
 
     except Exception as e:
         await message.reply_text(f"خطا در دانلود: {e}")
